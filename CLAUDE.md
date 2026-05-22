@@ -62,19 +62,32 @@ templates/
 ├── agents/README.md
 ├── commands/
 │   ├── agents/README.md
-│   ├── create-microfront.md
 │   ├── mcp/README.md
 │   ├── scripts/README.md
 │   └── skills/README.md
+├── docs/
+│   ├── login.md        ← @maxi/login — Keycloak, token$, exported API, session patterns
+│   ├── mwc.md          ← Maxi Web Components — full component reference, props, events
+│   ├── root-config.md  ← root-config — routes, import maps, startup sequence, inter-app comms
+│   └── styleguide.md   ← @maxi/styleguide — component catalog, hooks, permission utilities, rules
 ├── mcp/README.md
-└── scripts/
-    ├── README.md
-    └── create-microfront.js
+└── scripts/README.md
 ```
 
 **To add a new template file:** drop it anywhere inside `templates/` following the desired target path. No code changes needed — `getAllFiles()` walks the tree dynamically.
 
 **Files intentionally excluded from templates:** `CLAUDE.md`, `settings.json`, `settings.local.json` — these are project-specific and must never be overwritten by the bootstrapper.
+
+#### About `docs/`
+
+The `docs/` folder contains context documents loaded by Claude Code when it opens a ZEUS microfrontend project. Each file documents a shared module Claude must understand before touching any app code:
+
+| File | Covers |
+|---|---|
+| `login.md` | How to consume `@maxi/login`: `token$`, `validateToken`, `decodeJWT`, session patterns, rules |
+| `mwc.md` | All `ms-*` / `Ms*` components: props, event names, refs, usage rules |
+| `root-config.md` | Registration flow, active routes, import maps per environment, cross-app communication |
+| `styleguide.md` | Full component catalog, form helpers, date utilities, permission API, strict usage rules |
 
 ### Flags
 

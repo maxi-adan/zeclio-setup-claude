@@ -84,14 +84,17 @@ zeclio-setup-claude
 │   │   └── README.md           ← Slash commands que usan herramientas MCP
 │   ├── scripts/
 │   │   └── README.md           ← Slash commands que ejecutan scripts
-│   ├── skills/
-│   │   └── README.md           ← Skills reutilizables como slash commands
-│   └── create-microfront.md    ← Comando /create-microfront
+│   └── skills/
+│       └── README.md           ← Skills reutilizables como slash commands
+├── docs/
+│   ├── login.md                ← Contexto de @maxi/login (Keycloak, token$, API de sesión)
+│   ├── mwc.md                  ← Referencia de Maxi Web Components (ms-* / Ms*)
+│   ├── root-config.md          ← Contexto del root-config (rutas, import maps, startup)
+│   └── styleguide.md           ← Catálogo de componentes, hooks y utilidades de @maxi/styleguide
 ├── mcp/
 │   └── README.md               ← Documentación del MCP de GitHub y alternativas
 └── scripts/
-    ├── README.md               ← Índice de scripts disponibles
-    └── create-microfront.js    ← Generador de microfronts Single-SPA
+    └── README.md               ← Índice de scripts disponibles
 ```
 
 > El comando **nunca toca** `settings.json`, `settings.local.json` ni `CLAUDE.md` — esos archivos son específicos de cada proyecto.
@@ -100,8 +103,4 @@ zeclio-setup-claude
 
 ## Próximos pasos
 
-Después de ejecutar el comando, abre el proyecto en Claude Code. Los slash commands y scripts estarán disponibles de inmediato:
-
-```sh
-/create-microfront   # Genera un nuevo microfrontend Single-SPA
-```
+Después de ejecutar el comando, abre el proyecto en Claude Code. Los documentos de contexto en `.claude/docs/` se cargan automáticamente y dan a Claude conocimiento de la plataforma ZEUS (componentes, autenticación, rutas, arquitectura).
