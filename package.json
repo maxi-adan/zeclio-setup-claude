@@ -2,17 +2,19 @@
   "name": "zeclio-setup-claude",
   "version": "0.0.1",
   "description": "Bootstraps the .claude structure (commands, scripts, agents, MCP docs) for Maxi projects",
+  "author": "ext.aasanchez@maxillc.com",
   "bin": {
-    "setup-claude": "./index.js"
+    "zeclio-setup-claude": "bin/zeclio-setup-claude"
   },
   "files": [
-    "index.js",
-    "templates/"
+    "zeclio-setup-claude.js",
+    "templates/",
+    "bin/"
   ],
   "engines": {
-    "node": ">=14"
+    "node": ">=16"
   },
-  "keywords": ["maxi", "claude", "setup", "scaffolding"],
-  "author": "Maxi",
-  "license": "UNLICENSED"
+  "publishConfig": {
+    "registry": "https://artifacts.maxilabs.net/repository/maxi-npm-hosted/"
+  }
 }
