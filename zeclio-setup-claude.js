@@ -62,6 +62,25 @@ function main() {
     copied++;
   }
 
+  if (!DRY_RUN) {
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf-8'));
+    fs.mkdirSync(TARGET_DIR, { recursive: true });
+    fs.writeFileSync(path.join(TARGET_DIR, '.version'), pkg.version + '\n');
+
+    const claudePath = path.join(process.cwd(), 'CLAUDE.md');
+    const reference = '\n@.claude/maxi-setup.md\n';
+    if (fs.existsSync(claudePath)) {
+      const content = fs.readFileSync(claudePath, 'utf-8');
+      if (!content.includes('@.claude/maxi-setup.md')) {
+        fs.appendFileSync(claudePath, reference);
+        log('+', GREEN, 'referencia añadida en CLAUDE.md → @.claude/maxi-setup.md');
+      }
+    } else {
+      fs.writeFileSync(claudePath, '@.claude/maxi-setup.md\n');
+      log('+', GREEN, 'creado   CLAUDE.md → @.claude/maxi-setup.md');
+    }
+  }
+
   console.log('');
   console.log(`  ${BOLD}Resultado:${RESET} ${GREEN}${copied} copiados${RESET}  ${YELLOW}${skipped} omitidos${RESET}`);
 

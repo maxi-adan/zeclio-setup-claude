@@ -75,6 +75,7 @@ zeclio-setup-claude
 
 ```
 .claude/
+├── CLAUDE.md                   ← Instrucciones para Claude: verifica versión al inicio de sesión
 ├── agents/
 │   └── README.md               ← Documentación para definir agentes personalizados
 ├── commands/

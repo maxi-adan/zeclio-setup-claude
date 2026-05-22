@@ -59,6 +59,7 @@ All files under `templates/` are shipped with the package (listed in `files` in 
 
 ```
 templates/
+├── CLAUDE.md           ← instrucciones para Claude: verificar versión al inicio de sesión
 ├── agents/README.md
 ├── commands/
 │   ├── agents/README.md
@@ -76,7 +77,7 @@ templates/
 
 **To add a new template file:** drop it anywhere inside `templates/` following the desired target path. No code changes needed — `getAllFiles()` walks the tree dynamically.
 
-**Files intentionally excluded from templates:** `CLAUDE.md`, `settings.json`, `settings.local.json` — these are project-specific and must never be overwritten by the bootstrapper.
+**Files intentionally excluded from templates:** `settings.json`, `settings.local.json` — these are project-specific and must never be overwritten by the bootstrapper.
 
 #### About `docs/`
 
