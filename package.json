@@ -1,6 +1,6 @@
 {
   "name": "zeclio-setup-claude",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "description": "Bootstraps the .claude structure (commands, scripts, agents, MCP docs) for Maxi projects",
   "author": "ext.aasanchez@maxillc.com",
   "bin": {
