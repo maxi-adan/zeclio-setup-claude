@@ -57,8 +57,16 @@ Este documento cubre todo lo necesario para que el flujo de sincronización de d
 
 ## 1. Instalar GitHub CLI (`gh`)
 
+**Windows:**
+
 ```powershell
 winget install --id GitHub.cli
+```
+
+**Mac:**
+
+```bash
+brew install gh
 ```
 
 > Si usas una terminal interna de un IDE (como Antigravity) que no hereda el PATH del sistema, el script lo resuelve automáticamente — no necesitas hacer nada extra.
@@ -102,6 +110,8 @@ El resto déjalo en `No access`.
 
 ### Para cada integrante del equipo (una sola vez por máquina)
 
+#### Windows
+
 **1. Abre PowerShell y ejecuta:**
 
 ```powershell
@@ -125,6 +135,34 @@ gh api repos/maxi-adan/zeclio-setup-claude --jq ".name"
 Debe responder `zeclio-setup-claude`. Si es así, ya puedes correr `npm run sync:docs`.
 
 > El token queda guardado permanentemente en tu perfil de PowerShell. En futuras sesiones se carga automáticamente.
+
+#### Mac
+
+**1. Abre Terminal y ejecuta:**
+
+```bash
+echo '\nexport GH_TOKEN="github_pat_xxxx..."' >> ~/.zshrc
+```
+
+Reemplaza `github_pat_xxxx...` con el token que te compartió el admin.
+
+> Si usas bash en lugar de zsh, cambia `~/.zshrc` por `~/.bash_profile`.
+
+**2. Recarga el perfil para aplicarlo en la sesión actual:**
+
+```bash
+source ~/.zshrc
+```
+
+**3. Verifica que funciona:**
+
+```bash
+gh api repos/maxi-adan/zeclio-setup-claude --jq ".name"
+```
+
+Debe responder `zeclio-setup-claude`. Si es así, ya puedes correr `npm run sync:docs`.
+
+> El token queda guardado permanentemente en tu perfil de shell. En futuras sesiones se carga automáticamente.
 
 ---
 
@@ -202,8 +240,10 @@ github.com/maxi-adan/zeclio-setup-claude → Actions → Publish to Nexus → Ru
 
 | Problema | Solución |
 |---|---|
-| `gh: command not found` | Abre una terminal nueva o reinstala con `winget install --id GitHub.cli`. |
-| `Could not access maxi-adan/zeclio-setup-claude` | Verifica que `GH_TOKEN` esté definido: `echo $env:GH_TOKEN`. Si está vacío, repite el paso 2. |
+| `gh: command not found` (Windows) | Abre una terminal nueva o reinstala con `winget install --id GitHub.cli`. |
+| `gh: command not found` (Mac) | Abre una terminal nueva o reinstala con `brew install gh`. |
+| `Could not access maxi-adan/zeclio-setup-claude` (Windows) | Verifica que `GH_TOKEN` esté definido: `echo $env:GH_TOKEN`. Si está vacío, repite el paso 2. |
+| `Could not access maxi-adan/zeclio-setup-claude` (Mac) | Verifica que `GH_TOKEN` esté definido: `echo $GH_TOKEN`. Si está vacío, repite el paso 2. |
 | `mwc.md not found` | Corre `npm run build` en `core/` primero. |
 | La Action no se dispara | El PR debe tocar archivos dentro de `templates/`. Verifica en la pestaña Actions. |
 | Error de publicación en Nexus | Verifica que el secret `NEXUS_TOKEN` esté configurado y sea válido. |
