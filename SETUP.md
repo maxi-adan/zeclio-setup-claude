@@ -71,18 +71,32 @@ Los scripts usan la variable de entorno `GH_TOKEN`. `gh` CLI la detecta automát
 
 ### Para el admin (una sola vez)
 
-Genera un token en GitHub:
+**1.** Ve a: `https://github.com/settings/personal-access-tokens/new`
 
-```
-github.com → Settings → Developer settings → Personal access tokens → Fine-grained tokens
-  → New Fine-grained token
-  → Repository access: Only selected repositories → maxi-adan/zeclio-setup-claude
-  → Permissions:
-      Contents      → Read and write
-      Pull requests → Read and write
-```
+**2.** Completa el formulario:
 
-Comparte ese token (`github_pat_...`) con el equipo de forma segura (no por chat).
+| Campo | Valor |
+|---|---|
+| Token name | `zeclio-sync-docs` (o el nombre que prefieras) |
+| Expiration | El tiempo que necesites (ej. 1 year) |
+| Resource owner | `maxi-adan` |
+
+**3.** En **Repository access** selecciona:
+- `Only select repositories`
+- Busca y selecciona: `maxi-adan/zeclio-setup-claude`
+
+**4.** En **Permissions** expande `Repository permissions` y configura:
+
+| Permiso | Valor |
+|---|---|
+| Contents | `Read and write` |
+| Pull requests | `Read and write` |
+
+El resto déjalo en `No access`.
+
+**5.** Clic en **Generate token** → copia el token (`github_pat_...`) que aparece. Solo se muestra una vez.
+
+**6.** Comparte ese token con el equipo de forma segura (no por chat).
 
 ---
 
