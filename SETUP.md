@@ -7,12 +7,50 @@ Este documento cubre todo lo necesario para que el flujo de sincronización de d
 ## Cómo funciona el sistema
 
 ```
-Editas o creas un .md en .claude/docs/  (maxi-libs/web-components)
-  → npm run build     genera mwc.md automáticamente al final del build
-  → npm run sync:docs sube todos los docs y abre un PR en zeclio-setup-claude
-  → mergeas el PR
-  → GitHub Action publica nueva versión a Nexus automáticamente
-  → proyectos corren: npx zeclio-setup-claude --force
+┌─────────────────────────────────┐     ┌─────────────────────────────────┐
+│   maxi-libs/web-components      │     │   ZEUS-Layout                   │
+│                                 │     │                                 │
+│  Editas componente              │     │  Editas doc manualmente         │
+│  → npm run build                │     │  (.claude/docs/*.md)            │
+│    genera mwc.md automático     │     │                                 │
+│  → npm run sync:docs            │     │  → npm run sync:docs            │
+└──────────────┬──────────────────┘     └───────────────┬─────────────────┘
+               │                                        │
+               └──────────────────┬─────────────────────┘
+                                  │
+                                  ▼
+                  ┌───────────────────────────────┐
+                  │   zeclio-setup-claude (GitHub) │
+                  │                               │
+                  │  PR creado automáticamente    │
+                  │  con los docs actualizados    │
+                  │                               │
+                  │  Al mergear:                  │
+                  │  → GitHub Action se dispara   │
+                  │  → bumpa versión en           │
+                  │    package.json               │
+                  │  → publica a Nexus            │
+                  └───────────────┬───────────────┘
+                                  │
+                                  ▼
+                  ┌───────────────────────────────┐
+                  │   Nexus (npm registry)        │
+                  │                               │
+                  │  Nueva versión disponible     │
+                  │  zeclio-setup-claude@x.x.x    │
+                  └───────────────┬───────────────┘
+                                  │
+                                  ▼
+                  ┌───────────────────────────────┐
+                  │   Proyectos microfrontend     │
+                  │                               │
+                  │  npx zeclio-setup-claude      │
+                  │                               │
+                  │  docs/*.md   → siempre        │
+                  │               actualizados    │
+                  │  otros       → solo si no     │
+                  │  archivos      existen        │
+                  └───────────────────────────────┘
 ```
 
 ---
@@ -125,8 +163,9 @@ npm run sync:docs
 3. Bumpa la versión patch en `package.json` y publica a Nexus
 4. Los proyectos actualizan con:
    ```powershell
-   npx zeclio-setup-claude --force
+   npx zeclio-setup-claude
    ```
+   > Los `docs/*.md` se sobreescriben automáticamente. El resto de archivos se omite si ya existen.
 
 ---
 

@@ -46,8 +46,9 @@ function main() {
   for (const templateFile of templateFiles) {
     const relative = path.relative(TEMPLATES_DIR, templateFile);
     const target = path.join(TARGET_DIR, relative);
+    const isDoc = relative.startsWith('docs' + path.sep) || relative.startsWith('docs/');
 
-    if (!FORCE && fs.existsSync(target)) {
+    if (!FORCE && !isDoc && fs.existsSync(target)) {
       log('~', YELLOW, `omitido   ${relative}`);
       skipped++;
       continue;
