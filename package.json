@@ -9,6 +9,7 @@
   "files": [
     "zeclio-setup-claude.js",
     "templates/",
+    "templates-root/",
     "bin/"
   ],
   "engines": {

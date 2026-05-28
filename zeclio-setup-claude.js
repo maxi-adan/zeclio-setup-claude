@@ -4,7 +4,9 @@ const fs = require('fs');
 const path = require('path');
 
 const TEMPLATES_DIR = path.join(__dirname, 'templates');
+const TEMPLATES_ROOT_DIR = path.join(__dirname, 'templates-root');
 const TARGET_DIR = path.join(process.cwd(), '.claude');
+const TARGET_ROOT_DIR = process.cwd();
 const FORCE = process.argv.includes('--force');
 const DRY_RUN = process.argv.includes('--dry-run');
 
@@ -39,29 +41,35 @@ function main() {
     console.log(`  ${YELLOW}[dry-run] No se escribirá ningún archivo${RESET}\n`);
   }
 
-  const templateFiles = getAllFiles(TEMPLATES_DIR);
   let copied = 0;
   let skipped = 0;
 
-  for (const templateFile of templateFiles) {
-    const relative = path.relative(TEMPLATES_DIR, templateFile);
-    const target = path.join(TARGET_DIR, relative);
-    const isDoc = relative.startsWith('docs' + path.sep) || relative.startsWith('docs/');
+  function processTemplates(srcDir, destDir, alwaysOverwritePrefix) {
+    if (!fs.existsSync(srcDir)) return;
+    for (const templateFile of getAllFiles(srcDir)) {
+      const relative = path.relative(srcDir, templateFile);
+      const target = path.join(destDir, relative);
+      const alwaysOverwrite = alwaysOverwritePrefix &&
+        (relative.startsWith(alwaysOverwritePrefix + path.sep) || relative.startsWith(alwaysOverwritePrefix + '/'));
 
-    if (!FORCE && !isDoc && fs.existsSync(target)) {
-      log('~', YELLOW, `omitido   ${relative}`);
-      skipped++;
-      continue;
+      if (!FORCE && !alwaysOverwrite && fs.existsSync(target)) {
+        log('~', YELLOW, `omitido   ${relative}`);
+        skipped++;
+        continue;
+      }
+
+      if (!DRY_RUN) {
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        fs.copyFileSync(templateFile, target);
+      }
+
+      log('+', GREEN, `copiado   ${relative}`);
+      copied++;
     }
-
-    if (!DRY_RUN) {
-      fs.mkdirSync(path.dirname(target), { recursive: true });
-      fs.copyFileSync(templateFile, target);
-    }
-
-    log('+', GREEN, `copiado   ${relative}`);
-    copied++;
   }
+
+  processTemplates(TEMPLATES_DIR, TARGET_DIR, 'docs');
+  processTemplates(TEMPLATES_ROOT_DIR, TARGET_ROOT_DIR, null);
 
   if (!DRY_RUN) {
     const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf-8'));

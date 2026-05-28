@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bash .specify/extensions/git/scripts/bash/initialize-repo.sh)",
+      "Bash(bash .specify/extensions/git/scripts/bash/create-new-feature.sh --json --short-name \"pros-cons-list\" \"Quiero un componente de lista de pros y contras donde el usuario pueda marcar items como investigados y que persista en localStorage\")",
+      "Bash(npm install *)",
+      "Read(//c/Users/adans/AppData/Local/Temp/claude/c--Users-adans-OneDrive-Escritorio-spec-kit-explorer/3ae74302-0e2e-405d-9f9a-09b0723fcdd1/tasks/**)",
+      "Bash(npm test *)",
+      "Bash(npm run *)"
+    ]
+  }
+}
