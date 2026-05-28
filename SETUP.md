@@ -61,65 +61,56 @@ Este documento cubre todo lo necesario para que el flujo de sincronización de d
 winget install --id GitHub.cli
 ```
 
-Abre una **terminal nueva** después de instalar para que el PATH se actualice.
-
-Verifica:
-```powershell
-gh --version
-```
-
 > Si usas una terminal interna de un IDE (como Antigravity) que no hereda el PATH del sistema, el script lo resuelve automáticamente — no necesitas hacer nada extra.
 
 ---
 
-## 2. Autenticación en GitHub
+## 2. Autenticación — token de GitHub
 
-Tienes dos opciones:
+Los scripts usan la variable de entorno `GH_TOKEN`. `gh` CLI la detecta automáticamente — no necesitas correr `gh auth login`.
 
-### Opción A — Con tu propia cuenta (para colaboradores del repo)
+### Para el admin (una sola vez)
 
-```powershell
-gh auth login
-```
+Genera un token en GitHub:
 
-Responde así:
-
-| Pregunta | Respuesta |
-|---|---|
-| Where do you use GitHub? | `GitHub.com` |
-| What is your preferred protocol? | `HTTPS` |
-| Authenticate Git with your GitHub credentials? | `Yes` |
-| How would you like to authenticate? | `Login with a web browser` |
-
-Se abre el navegador — copia el código de la terminal, pégalo en GitHub y autoriza.
-
-Verifica:
-```powershell
-gh auth status
-```
-
-El admin del repo debe darte acceso en:
-```
-github.com/maxi-adan/zeclio-setup-claude → Settings → Collaborators → Add people
-```
-
-### Opción B — Con token compartido (sin ser colaborador)
-
-El admin genera un token en:
 ```
 github.com → Settings → Developer settings → Personal access tokens → Fine-grained tokens
-  → Repository: maxi-adan/zeclio-setup-claude
-  → Permissions: Contents (write) + Pull requests (write)
+  → New Fine-grained token
+  → Repository access: Only selected repositories → maxi-adan/zeclio-setup-claude
+  → Permissions:
+      Contents      → Read and write
+      Pull requests → Read and write
 ```
 
-Agrega el token a tu entorno de PowerShell:
+Comparte ese token (`github_pat_...`) con el equipo de forma segura (no por chat).
+
+---
+
+### Para cada integrante del equipo (una sola vez por máquina)
+
+**1. Abre PowerShell y ejecuta:**
 
 ```powershell
-# Permanente — lo agrega a tu perfil de PowerShell
 Add-Content $PROFILE "`n`$env:GH_TOKEN = 'github_pat_xxxx...'"
 ```
 
-`gh` CLI lo detecta automáticamente. No necesitas correr `gh auth login`.
+Reemplaza `github_pat_xxxx...` con el token que te compartió el admin.
+
+**2. Recarga el perfil para aplicarlo en la sesión actual:**
+
+```powershell
+. $PROFILE
+```
+
+**3. Verifica que funciona:**
+
+```powershell
+gh api repos/maxi-adan/zeclio-setup-claude --jq ".name"
+```
+
+Debe responder `zeclio-setup-claude`. Si es así, ya puedes correr `npm run sync:docs`.
+
+> El token queda guardado permanentemente en tu perfil de PowerShell. En futuras sesiones se carga automáticamente.
 
 ---
 
@@ -197,8 +188,8 @@ github.com/maxi-adan/zeclio-setup-claude → Actions → Publish to Nexus → Ru
 
 | Problema | Solución |
 |---|---|
-| `gh: command not found` | Abre una terminal nueva. Si persiste, usa la Opción B con `GH_TOKEN`. |
-| `Could not access maxi-adan/zeclio-setup-claude` | Verifica `gh auth status` o que `GH_TOKEN` esté definido. Pide acceso al admin. |
+| `gh: command not found` | Abre una terminal nueva o reinstala con `winget install --id GitHub.cli`. |
+| `Could not access maxi-adan/zeclio-setup-claude` | Verifica que `GH_TOKEN` esté definido: `echo $env:GH_TOKEN`. Si está vacío, repite el paso 2. |
 | `mwc.md not found` | Corre `npm run build` en `core/` primero. |
 | La Action no se dispara | El PR debe tocar archivos dentro de `templates/`. Verifica en la pestaña Actions. |
 | Error de publicación en Nexus | Verifica que el secret `NEXUS_TOKEN` esté configurado y sea válido. |
