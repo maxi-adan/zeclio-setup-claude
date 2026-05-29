@@ -6,7 +6,7 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 `zeclio-setup-claude` is an npm CLI package published to the Maxi Nexus registry. It is a **bootstrapper** — it has no build step and no test suite. Running it copies a predefined set of template files into the `.claude/` folder of whatever directory the user runs it from.
 
-The package has one main file: `zeclio-setup-claude.js`. Everything else (`bin/`, `templates/`, `package.json`) is packaging scaffolding.
+The package has one main file: `zeclio-setup-claude.js`. Everything else (`bin/`, `templates/`, `templates-root/`, `package.json`) is packaging scaffolding.
 
 ## Commands
 
@@ -44,40 +44,54 @@ node /path/to/zeclio-setup-claude.js --dry-run
 
 ### Copy flow (`zeclio-setup-claude.js`)
 
-`main()` does the following in order:
+`main()` calls `processTemplates()` twice — once per source directory:
 
-1. Resolves `TEMPLATES_DIR` (`__dirname/templates/`) and `TARGET_DIR` (`cwd()/.claude/`)
-2. Walks `TEMPLATES_DIR` recursively with `getAllFiles()` to get a flat list of all template files
-3. For each file, computes the relative path from the templates root and the corresponding target path under `.claude/`
-4. If `--force` is not set and the target file already exists → logs `~  omitido` and skips
-5. Otherwise → creates parent directories with `mkdirSync({ recursive: true })`, copies the file, logs `+  copiado`
-6. If `--dry-run` is set → steps 4–5 run without writing anything
+| Source | Destination | Always overwrites |
+|---|---|---|
+| `templates/` | `cwd()/.claude/` | `docs/**` |
+| `templates-root/` | `cwd()/` (project root) | nothing (skip if exists) |
+
+`processTemplates(srcDir, destDir, alwaysOverwritePrefix)` does the following:
+
+1. Walks `srcDir` recursively with `getAllFiles()` to get a flat list of files
+2. For each file, computes the relative path from the source root and the corresponding target path under `destDir`
+3. If `--force` is not set and `alwaysOverwritePrefix` doesn't match and the target exists → logs `~  omitido` and skips
+4. Otherwise → creates parent directories with `mkdirSync({ recursive: true })`, copies the file, logs `+  copiado`
+5. If `--dry-run` is set → steps 3–4 run without writing anything
+
+**Special rule for `docs/`:** files under `templates/docs/` always overwrite the target — no `--force` needed. This ensures docs stay up to date every time `npx zeclio-setup-claude` runs.
 
 ### Templates
 
-All files under `templates/` are shipped with the package (listed in `files` in `package.json`). The directory structure inside `templates/` maps 1:1 to what gets written under `.claude/`.
+Both `templates/` and `templates-root/` are shipped with the package (listed in `files` in `package.json`).
+
+#### `templates/` → `.claude/`
 
 ```
 templates/
 ├── CLAUDE.md           ← instrucciones para Claude: verificar versión al inicio de sesión
-├── agents/README.md
-├── commands/
-│   ├── agents/README.md
-│   ├── mcp/README.md
-│   ├── scripts/README.md
-│   └── skills/README.md
 ├── docs/
 │   ├── login.md        ← @maxi/login — Keycloak, token$, exported API, session patterns
 │   ├── mwc.md          ← Maxi Web Components — full component reference, props, events
 │   ├── root-config.md  ← root-config — routes, import maps, startup sequence, inter-app comms
 │   └── styleguide.md   ← @maxi/styleguide — component catalog, hooks, permission utilities, rules
-├── mcp/README.md
-└── scripts/README.md
+├── settings.json
+└── skills/
+    └── speckit-*/SKILL.md
 ```
 
-**To add a new template file:** drop it anywhere inside `templates/` following the desired target path. No code changes needed — `getAllFiles()` walks the tree dynamically.
+#### `templates-root/` → project root (`./`)
 
-**Files intentionally excluded from templates:** `settings.json`, `settings.local.json` — these are project-specific and must never be overwritten by the bootstrapper.
+```
+templates-root/
+└── .specify/           ← Specify tool config, copied to root of the target project
+```
+
+**To add a new template file under `.claude/`:** drop it inside `templates/`. No code changes needed.
+
+**To add a new file at the project root:** drop it inside `templates-root/`. No code changes needed.
+
+**Files intentionally excluded from templates:** `settings.local.json` — project-specific, must never be overwritten.
 
 #### About `docs/`
 
@@ -98,6 +112,28 @@ The `docs/` folder contains context documents loaded by Claude Code when it open
 | `--dry-run` | `DRY_RUN` | Skips `mkdirSync` and `copyFileSync`, only logs |
 
 Both are read from `process.argv` at module load time.
+
+---
+
+## Doc sync system
+
+`docs/` files in this package are auto-synced from two source repos via their `npm run sync:docs` command:
+
+| Source repo | Docs location | Notable doc |
+|---|---|---|
+| `maxi-libs/web-components` | `.claude/docs/` | `mwc.md` — auto-generated from Stencil component `readme.md` files on every `npm run build` |
+| `ZEUS-Layout` | `.claude/docs/` | Docs maintained manually |
+
+### Flow
+
+1. Developer runs `npm run sync:docs` in either source repo
+2. Script (`scripts/sync-docs.js`) uploads all `.md` files from `.claude/docs/` to `templates/docs/` in this repo via GitHub API and opens a PR
+3. If a new doc appears that isn't referenced in `templates/maxi-setup.md`, the script adds it to the table automatically using the `description:` frontmatter field
+4. PR is reviewed and merged
+5. GitHub Action (`.github/workflows/publish-on-merge.yml`) detects changes in `templates/` → bumps patch version → publishes to Nexus
+6. Projects run `npx zeclio-setup-claude` to pull the latest docs
+
+The sync scripts use `GH_TOKEN` env var for authentication. See `SETUP.md` for token setup instructions.
 
 ---
 
