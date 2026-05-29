@@ -1,3 +1,3 @@
 # Root-Config — Context for Claude
 
-TEST
+CHRIS ROOT CONFIG
