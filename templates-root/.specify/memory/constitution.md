@@ -1,86 +1,50 @@
-<!-- SYNC IMPACT REPORT
-Version change: (template / unreleased) → 1.0.0
-Modified principles: N/A — initial constitution, no prior version.
-Added sections:
-  - Core Principles (I–V)
-  - Code Quality & Style
-  - Development Workflow
-  - Governance
-Removed sections: N/A — initial constitution.
-Templates reviewed:
-  - .specify/templates/plan-template.md ✅ compatible — Constitution Check gate present; gates derive from principles below.
-  - .specify/templates/spec-template.md ✅ compatible — user stories and requirements structure aligns with principles.
-  - .specify/templates/tasks-template.md ✅ compatible — phase/story structure aligns with Test-Driven Logic and Simplicity principles.
-  - .specify/templates/commands/ — no command files found; nothing to update.
-Follow-up TODOs: None — all placeholders resolved.
--->
-
-# Spec Kit Explorer Constitution
+# [PROJECT_NAME] Constitution
+<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
 
 ## Core Principles
 
-### I. Component-First Design
+### [PRINCIPLE_1_NAME]
+<!-- Example: I. Library-First -->
+[PRINCIPLE_1_DESCRIPTION]
+<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
 
-Every UI feature MUST be built from small, composable React components. Each
-component has a single responsibility and MUST be independently renderable
-without relying on hidden global side effects. State is lifted only as high as
-necessary to satisfy requirements; no higher.
+### [PRINCIPLE_2_NAME]
+<!-- Example: II. CLI Interface -->
+[PRINCIPLE_2_DESCRIPTION]
+<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
 
-### II. Explicit Typing
+### [PRINCIPLE_3_NAME]
+<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
+[PRINCIPLE_3_DESCRIPTION]
+<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
 
-All component props and function signatures MUST be explicitly typed using
-TypeScript types or rigorous JSDoc annotations. Implicit `any` types are
-prohibited. Every public interface boundary requires a declared type contract.
+### [PRINCIPLE_4_NAME]
+<!-- Example: IV. Integration Testing -->
+[PRINCIPLE_4_DESCRIPTION]
+<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
 
-### III. Test-Driven Logic
+### [PRINCIPLE_5_NAME]
+<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
+[PRINCIPLE_5_DESCRIPTION]
+<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
 
-Non-trivial business logic and utility functions MUST have tests written and
-confirmed failing before implementation begins (Red → Green → Refactor). UI
-components with conditional rendering or dynamic state MUST include rendering
-tests. Tests are written first; implementation follows only after a failing test
-exists.
+## [SECTION_2_NAME]
+<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
 
-### IV. Performance Consciousness
+[SECTION_2_CONTENT]
+<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
 
-Unnecessary re-renders are prohibited. React optimization primitives (`memo`,
-`useCallback`, `useMemo`) MUST only be applied when profiling confirms a
-measurable need — never preemptively. Each new runtime dependency MUST be
-justified by its impact on bundle size. Vite build output MUST not regress
-on bundle size without documented justification.
+## [SECTION_3_NAME]
+<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
 
-### V. Simplicity (YAGNI)
-
-The simplest solution that satisfies the stated requirement MUST be chosen.
-Premature abstractions, speculative features, and over-engineered helpers are
-prohibited. Three similar lines of code are preferable to a premature
-extraction. Abstractions introduced for hypothetical future needs are a
-constitution violation.
-
-## Code Quality & Style
-
-All code merged to the main branch MUST pass ESLint checks without suppressed
-warnings. Any suppression requires an inline justification comment referencing
-why the rule does not apply. Formatting is enforced by the project ESLint
-configuration. `TODO` comments MUST NOT be merged without a linked issue or
-ticket reference.
-
-## Development Workflow
-
-Feature branches are REQUIRED for all changes; direct commits to `main` are
-prohibited. Pull requests MUST be reviewed by at least one other contributor
-before merge. The Vite build (`npm run build`) MUST succeed and the dev server
-(`npm run dev`) MUST be manually validated for any UI-impacting change before
-the PR is considered complete. CI lint checks MUST pass before merging.
+[SECTION_3_CONTENT]
+<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
 
 ## Governance
+<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
 
-This constitution supersedes all other development practices. Amendments
-require: (1) a documented rationale, (2) a version bump following semantic
-versioning rules (MAJOR for principle removals/redefinitions; MINOR for new
-principles or material expansions; PATCH for clarifications and wording fixes),
-and (3) propagation of changes across all dependent templates listed in the
-Sync Impact Report. Compliance is verified at the Constitution Check gate in
-every implementation plan. Complexity violations MUST be justified in the
-plan's Complexity Tracking table before implementation work begins.
+[GOVERNANCE_RULES]
+<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
 
-**Version**: 1.0.0 | **Ratified**: 2026-05-14 | **Last Amended**: 2026-05-14
+**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
+<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
