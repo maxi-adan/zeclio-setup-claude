@@ -40,3 +40,4 @@ Los archivos en `.claude/docs/` describen la arquitectura y las APIs de la plata
 | `docs/mwc.md` | Cualquier componente `ms-*` / `Ms*` |
 | `docs/root-config.md` | Rutas, import maps, registro de microfrontends |
 | `docs/styleguide.md` | Componentes UI, helpers, permisos de `@maxi/styleguide` |
+| `.specify/memory/constitution.md` | Principios y gobernanza del proyecto |
