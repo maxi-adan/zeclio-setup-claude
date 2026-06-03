@@ -10,6 +10,13 @@ const TARGET_ROOT_DIR = process.cwd();
 const FORCE = process.argv.includes('--force');
 const DRY_RUN = process.argv.includes('--dry-run');
 
+// Archivos que jamás se sobreescriben aunque se pase --force.
+// Son archivos del proyecto (no del tool) que acumulan contenido específico del repo.
+const NEVER_OVERWRITE = [
+  'SETUP.md',
+  '.specify/memory/constitution.md',
+];
+
 const BOLD = '\x1b[1m';
 const GREEN = '\x1b[32m';
 const YELLOW = '\x1b[33m';
@@ -52,7 +59,8 @@ function main() {
       const alwaysOverwrite = alwaysOverwritePrefix &&
         (relative.startsWith(alwaysOverwritePrefix + path.sep) || relative.startsWith(alwaysOverwritePrefix + '/'));
 
-      if (!FORCE && !alwaysOverwrite && fs.existsSync(target)) {
+      const neverOverwrite = NEVER_OVERWRITE.some(p => relative.replace(/\\/g, '/') === p);
+      if ((neverOverwrite || (!FORCE && !alwaysOverwrite)) && fs.existsSync(target)) {
         log('~', YELLOW, `omitido   ${relative}`);
         skipped++;
         continue;
@@ -89,15 +97,45 @@ function main() {
       log('+', GREEN, 'creado   CLAUDE.md → @.claude/maxi-setup.md');
     }
 
+    const memoryRef = '@project-state.md';
+    const claudeContentAfterSetup = fs.readFileSync(claudePath, 'utf-8');
+    if (!claudeContentAfterSetup.includes(memoryRef)) {
+      fs.appendFileSync(claudePath, '\n' + memoryRef + '\n');
+      log('+', GREEN, 'referencia añadida en CLAUDE.md → @project-state.md');
+    }
+
+    const projectStatePath = path.join(TARGET_ROOT_DIR, 'project-state.md');
+    if (!fs.existsSync(projectStatePath)) {
+      fs.writeFileSync(projectStatePath,
+        '# Estado del proyecto\n\n' +
+        'Este archivo documenta lo que se ha construido. Cualquier desarrollador que clone el repo parte de aquí.\n' +
+        'Actualizar cada vez que se complete una feature o se agregue un componente reutilizable.\n\n' +
+        '## Componentes existentes\n\n' +
+        '| Archivo | Descripción |\n' +
+        '|---|---|\n' +
+        '| _(vacío — completar al construir)_ | |\n\n' +
+        '## Features completadas\n\n' +
+        '| Spec | Feature | Estado |\n' +
+        '|---|---|---|\n' +
+        '| _(vacío)_ | | |\n\n' +
+        '## Patrones establecidos en este proyecto\n\n' +
+        '_Agregar aquí decisiones de diseño locales que no están en la constitution global._\n'
+      );
+      log('+', GREEN, 'creado   project-state.md');
+    }
+
     const updateRuleMarker = 'Al terminar cualquier tarea';
     const updateRuleText =
       '\n- **Al terminar cualquier tarea**, actualizar este archivo si algo cambió en la arquitectura del proyecto: ' +
       'nueva ruta registrada, nuevo módulo compartido, nuevo patrón establecido, nueva regla de la plataforma descubierta. ' +
-      'No registrar cambios de código — eso es responsabilidad del historial de git.\n';
+      'No registrar cambios de código — eso es responsabilidad del historial de git.\n' +
+      '- **Al terminar cualquier tarea que cree un componente o complete una feature**, actualizar `.claude/memory/project-state.md`: ' +
+      'agregar el componente en la tabla con su ruta y descripción de una línea, o la feature en la tabla de features completadas ' +
+      'con referencia a su spec. No esperar a que se pida — hacerlo siempre al finalizar.\n';
     const claudeContent = fs.readFileSync(claudePath, 'utf-8');
     if (!claudeContent.includes(updateRuleMarker)) {
       fs.appendFileSync(claudePath, updateRuleText);
-      log('+', GREEN, 'regla de mantenimiento añadida en CLAUDE.md');
+      log('+', GREEN, 'reglas de mantenimiento añadidas en CLAUDE.md');
     }
   }
 

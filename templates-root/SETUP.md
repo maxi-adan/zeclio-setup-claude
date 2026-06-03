@@ -218,15 +218,25 @@ El hook `before_specify` es **obligatorio** — siempre crea la rama antes de cr
 
 ## 10. Mantener CLAUDE.md actualizado
 
-Al terminar cualquier tarea, Claude actualiza `CLAUDE.md` si algo cambió en la arquitectura. Esta regla está definida en el propio `CLAUDE.md` y aplica en todo momento.
+Al terminar cualquier tarea, Claude evalúa si algo cambió en la **arquitectura** del proyecto. Si cambió → actualiza `CLAUDE.md`. Si no → no toca nada.
 
-| Cambio | Dónde en CLAUDE.md |
+### Cuándo SÍ se actualiza
+
+| Evento | Qué se agrega en CLAUDE.md |
 |---|---|
-| Nuevo microfrontend registrado | Tabla de módulos / referencia a root-config |
-| Nuevo patrón compartido establecido | Sección Reglas globales |
-| Nueva restricción de la plataforma | Sección Reglas globales |
+| Se registra un nuevo microfrontend en root-config | Nueva fila en la tabla de módulos |
+| Se establece un nuevo patrón que todos deben seguir | Nueva regla en "Reglas globales" |
+| Se descubre una restricción de la plataforma | Nueva regla en "Reglas globales" |
+| Se agrega un módulo al import map global | Nueva fila en la tabla de módulos |
 
-**No poner:** cambios de código, detalles de features, estado temporal — eso va en git y en `specs/`.
+### Cuándo NO se actualiza
+
+| Situación | Razón |
+|---|---|
+| Se creó un componente dentro del microfrontend | Cambio de código, no de arquitectura — va en git |
+| Se hizo una feature completa con SpecKit | Los artefactos van en `specs/` — CLAUDE.md no es un changelog |
+| Se modificó lógica de negocio | No es información que Claude necesite en futuras sesiones |
+| Se hizo una tarea puntual (tabla, formulario) | Igual — git lo registra, no CLAUDE.md |
 
 ---
 

@@ -105,6 +105,8 @@ templates-root/
 
 **CLAUDE.md is not a template file** — it is written/patched by the injection logic at the end of `main()`, not by `processTemplates()`. Adding content to `CLAUDE.md` requires editing the injection block in `zeclio-setup-claude.js`, not dropping a file in `templates-root/`.
 
+**`memory/project-state.md` is not a template file either** — it is created once by the injection logic if it doesn't exist, and is never overwritten (not even with `--force`). Each project accumulates its own history there. Putting it in `templates/` would reset project-specific content on `--force` runs.
+
 #### About `docs/`
 
 The `docs/` folder contains context documents loaded by Claude Code when it opens a ZEUS microfrontend project. Each file documents a shared module Claude must understand before touching any app code:
