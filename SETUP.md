@@ -212,7 +212,36 @@ npm run sync:docs
 
 ---
 
-## 5. Agregar un nuevo documento
+## 5. Actualizar templates de proyecto (SETUP.md, constitution, inyecciones)
+
+Además de los docs, el script distribuye otros archivos y lógica que también deben mantenerse al día.
+
+### `templates-root/SETUP.md`
+
+Guía de flujo de trabajo que se crea en la raíz de cada proyecto nuevo. Para actualizarla:
+
+1. Edita `templates-root/SETUP.md` en este repo directamente.
+2. El cambio llega a proyectos nuevos en el próximo `npx zeclio-setup-claude`.
+3. Proyectos existentes **no se actualizan automáticamente** — `SETUP.md` nunca se sobreescribe. Si el cambio es crítico, notifica al equipo para que corra `npx zeclio-setup-claude --force`.
+
+### `templates-root/.specify/memory/constitution.md`
+
+Principios ZEUS que SpecKit usa como gate de calidad en `/speckit-plan` y `/speckit-implement`. Para actualizarla:
+
+1. Edita `templates-root/.specify/memory/constitution.md` en este repo.
+2. Mismo comportamiento que `SETUP.md`: solo llega a proyectos nuevos o con `--force`.
+
+### Inyecciones en `CLAUDE.md` (lógica en el script)
+
+Las inyecciones en `CLAUDE.md` están hardcodeadas en `zeclio-setup-claude.js`. Para agregar una nueva inyección:
+
+1. Edita el bloque `if (!DRY_RUN)` al final de `main()` en `zeclio-setup-claude.js`.
+2. Sigue el patrón existente: define un **marker único** para idempotencia, define el **texto a inyectar**, verifica si el marker ya está presente antes de escribir.
+3. Estas inyecciones **sí corren en cada ejecución** (con o sin `--force`) — la idempotencia la garantiza el marker.
+
+---
+
+## 6. Agregar un nuevo doc de plataforma
 
 1. Crea el `.md` en `.claude/docs/` dentro de `maxi-libs/web-components`
 2. Agrega un frontmatter con `description:` para que aparezca correctamente en `maxi-setup.md`:
@@ -226,7 +255,7 @@ npm run sync:docs
 
 ---
 
-## 6. Disparar la Action manualmente
+## 7. Disparar la Action manualmente
 
 Si necesitas publicar sin hacer un nuevo sync, puedes disparar la Action desde GitHub:
 
@@ -236,7 +265,7 @@ github.com/maxi-adan/zeclio-setup-claude → Actions → Publish to Nexus → Ru
 
 ---
 
-## 7. Troubleshooting
+## 8. Troubleshooting
 
 | Problema | Solución |
 |---|---|

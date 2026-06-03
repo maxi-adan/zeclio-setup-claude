@@ -1,50 +1,62 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+# ZEUS Platform Constitution
 
-## Core Principles
+## I. Módulos compartidos (NON-NEGOTIABLE)
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+Todos los componentes UI deben venir de `@maxi/styleguide`.
+Nunca instalar `maxi-react-components` directamente en un microfrontend.
+Nunca incluir en el bundle React, RxJS ni single-spa — están en el import map global de root-config.
+Importar siempre vía nombre de módulo (`@maxi/styleguide`), nunca por ruta relativa interna.
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+## II. Autenticación
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+Nunca re-implementar autenticación en un microfrontend.
+Usar `token$` o `props.token` de `@maxi/login` para acceder a la sesión.
+Nunca almacenar el token en `localStorage` ni `sessionStorage`.
+Usar `validateToken()` antes de operaciones críticas o de larga duración.
+Nunca llamar `keycloak.init()` desde un microfrontend — ya corre en el módulo login.
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+## III. Controles HTML nativos (PROHIBIDO)
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+Nunca usar `<input>`, `<select>`, `<textarea>`, `<table>`, `<dialog>`, `alert()`, `confirm()`.
+Usar siempre los equivalentes de `@maxi/styleguide`:
+- Texto → `MsInputField`
+- Select simple → `MsDropdown`
+- Select múltiple → `MsMultiselect`
+- Fecha → `MsCalendar`
+- Tabla → `MsTable`
+- Modal → `MsDialog`
+- Notificación → `MsNotification`
+- Carga de archivos → `MsFileUpload`
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+## IV. Permisos
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+Usar `validatePermission()` o `validateGroupPermissions()` de `@maxi/styleguide` para controlar visibilidad de acciones.
+Nunca derivar permisos de lógica propia como `user.role === 'admin'`.
+`getUserRoles()` retorna el raw de Keycloak — preferir siempre los helpers del styleguide.
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+## V. Props y eventos de componentes Ms*
 
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+Antes de usar cualquier componente `Ms*`, verificar los props y eventos exactos en `.claude/docs/mwc.md`.
+Los nombres no siguen HTML estándar — son no obvios (ej. `activeTab` no `activeIndex`, `clickEvent` no `click`).
+En React, los eventos se exponen con prefijo `on`: `clickEvent` → `onClickEvent`.
+Pasar objetos y arrays como props JavaScript, nunca como strings JSON.
+
+## VI. Dependencias
+
+Nunca duplicar dependencias compartidas (React, ReactDOM, RxJS, Vue, single-spa).
+Están provistas globalmente vía CDN en el import map de root-config/index.ejs.
+Nunca re-exportar ni re-importar estas librerías desde el bundle del microfrontend.
+
+## VII. CSS y tema
+
+El CSS global (`global.css` o `global-zeclio.css`) se importa una sola vez en el entry point.
+Nunca re-importarlo dentro de componentes individuales.
+Para personalizar el tema, sobreescribir las CSS custom properties en el stylesheet global del proyecto.
 
 ## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
 
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
+Esta constitution tiene precedencia sobre cualquier otra convención del proyecto.
+Cualquier violación detectada durante `/speckit-plan` o `/speckit-implement` debe reportarse antes de continuar.
+Para agregar o modificar principios, usar `/speckit-constitution`.
 
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+**Version**: 1.0.0 | **Ratified**: 2026-06-03 | **Last Amended**: 2026-06-03

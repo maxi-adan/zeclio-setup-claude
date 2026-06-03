@@ -51,6 +51,11 @@ node /path/to/zeclio-setup-claude.js --dry-run
 | `templates/` | `cwd()/.claude/` | `docs/**` |
 | `templates-root/` | `cwd()/` (project root) | nothing (skip if exists) |
 
+After the copy loop, `main()` runs two **CLAUDE.md injections** regardless of `--force`:
+
+1. **`@.claude/maxi-setup.md` reference** — appended once if not already present; creates `CLAUDE.md` if it doesn't exist yet.
+2. **Maintenance rule** — appended once if the marker `'Al terminar cualquier tarea'` is not found. Instructs Claude to update `CLAUDE.md` whenever the project architecture changes (new routes, modules, patterns, rules). Idempotent.
+
 `processTemplates(srcDir, destDir, alwaysOverwritePrefix)` does the following:
 
 1. Walks `srcDir` recursively with `getAllFiles()` to get a flat list of files
@@ -84,7 +89,10 @@ templates/
 
 ```
 templates-root/
-└── .specify/           ← Specify tool config, copied to root of the target project
+├── SETUP.md                          ← Guía de flujo de trabajo ZEUS (SpecKit, docs, versión)
+└── .specify/                         ← Specify tool config, copied to root of the target project
+    └── memory/
+        └── constitution.md           ← Principios ZEUS pre-llenados (módulos, auth, controles, permisos)
 ```
 
 **To add a new template file under `.claude/`:** drop it inside `templates/`. No code changes needed.
@@ -92,6 +100,10 @@ templates-root/
 **To add a new file at the project root:** drop it inside `templates-root/`. No code changes needed.
 
 **Files intentionally excluded from templates:** `settings.local.json` — project-specific, must never be overwritten.
+
+**Files never overwritten by `processTemplates`:** `SETUP.md` and `.specify/memory/constitution.md` live in `templates-root/` with no `alwaysOverwritePrefix`, so they are created once and left alone on subsequent runs. Use `--force` to reset them to template defaults.
+
+**CLAUDE.md is not a template file** — it is written/patched by the injection logic at the end of `main()`, not by `processTemplates()`. Adding content to `CLAUDE.md` requires editing the injection block in `zeclio-setup-claude.js`, not dropping a file in `templates-root/`.
 
 #### About `docs/`
 
@@ -112,6 +124,12 @@ The `docs/` folder contains context documents loaded by Claude Code when it open
 | `--dry-run` | `DRY_RUN` | Skips `mkdirSync` and `copyFileSync`, only logs |
 
 Both are read from `process.argv` at module load time.
+
+---
+
+## Regla de mantenimiento
+
+- **Al terminar cualquier tarea**, actualizar este archivo si algo cambió en la arquitectura del proyecto: nueva lógica de inyección en el script, nuevos archivos en templates, cambios en el flujo de sincronización, nuevas flags. No registrar cambios de contenido de docs — eso es responsabilidad del historial de git.
 
 ---
 

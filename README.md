@@ -73,35 +73,55 @@ zeclio-setup-claude
 
 ## Qué crea
 
+### En `.claude/`
+
 ```
 .claude/
-├── CLAUDE.md                   ← Instrucciones para Claude: verifica versión al inicio de sesión
-├── agents/
-│   └── README.md               ← Documentación para definir agentes personalizados
-├── commands/
-│   ├── agents/
-│   │   └── README.md           ← Slash commands que invocan agentes
-│   ├── mcp/
-│   │   └── README.md           ← Slash commands que usan herramientas MCP
-│   ├── scripts/
-│   │   └── README.md           ← Slash commands que ejecutan scripts
-│   └── skills/
-│       └── README.md           ← Skills reutilizables como slash commands
+├── .version                    ← Versión instalada del setup (usada para detectar actualizaciones)
+├── maxi-setup.md               ← Instrucciones de sesión: verifica versión, referencia docs
 ├── docs/
 │   ├── login.md                ← Contexto de @maxi/login (Keycloak, token$, API de sesión)
 │   ├── mwc.md                  ← Referencia de Maxi Web Components (ms-* / Ms*)
 │   ├── root-config.md          ← Contexto del root-config (rutas, import maps, startup)
 │   └── styleguide.md           ← Catálogo de componentes, hooks y utilidades de @maxi/styleguide
-├── mcp/
-│   └── README.md               ← Documentación del MCP de GitHub y alternativas
-└── scripts/
-    └── README.md               ← Índice de scripts disponibles
+└── skills/
+    └── speckit-*/SKILL.md      ← Skills de SpecKit (specify, plan, tasks, implement, …)
 ```
 
-> El comando **nunca toca** `settings.json`, `settings.local.json` ni `CLAUDE.md` — esos archivos son específicos de cada proyecto.
+> `docs/` **siempre se sobreescribe** en cada ejecución para mantener la documentación actualizada.
+> El resto de archivos en `.claude/` solo se crea si no existe — nunca sobreescribe.
+
+### En la raíz del proyecto
+
+```
+SETUP.md                                ← Guía de flujo de trabajo ZEUS (SpecKit, docs, versión)
+.specify/
+└── memory/
+    └── constitution.md                 ← Principios ZEUS pre-llenados (módulos, auth, controles, permisos)
+└── (resto de .specify/)                ← Config de SpecKit: templates, scripts, extensions, workflows
+```
+
+> `SETUP.md` y `constitution.md` solo se crean si no existen — en re-ejecuciones se respetan los cambios del proyecto.
+
+### En `CLAUDE.md`
+
+El script **inyecta dos bloques** en `CLAUDE.md` si no están ya presentes (crea el archivo si no existe):
+
+| Inyección | Contenido |
+|---|---|
+| Referencia de sesión | `@.claude/maxi-setup.md` — Claude la carga al inicio de cada sesión |
+| Regla de mantenimiento | Instrucción para que Claude actualice `CLAUDE.md` cuando cambie la arquitectura del proyecto |
+
+> `CLAUDE.md` **no es un archivo de template** — el script lo parchea directamente. Agregar más inyecciones requiere editar `zeclio-setup-claude.js`.
 
 ---
 
 ## Próximos pasos
 
-Después de ejecutar el comando, abre el proyecto en Claude Code. Los documentos de contexto en `.claude/docs/` se cargan automáticamente y dan a Claude conocimiento de la plataforma ZEUS (componentes, autenticación, rutas, arquitectura).
+Después de ejecutar el comando, abre el proyecto en Claude Code. Al inicio de cada sesión Claude:
+
+1. Lee `.claude/maxi-setup.md` y verifica si la versión instalada coincide con la disponible en Nexus — si no, ejecuta `npx zeclio-setup-claude@latest --force` automáticamente.
+2. Carga todos los docs de `.claude/docs/` en contexto (login, mwc, root-config, styleguide).
+3. Aplica las reglas de `CLAUDE.md` y los principios de `.specify/memory/constitution.md` en cualquier tarea de código.
+
+Consulta `SETUP.md` en la raíz del proyecto para el flujo de trabajo completo: tareas directas, features con SpecKit y cómo mantener `CLAUDE.md` actualizado.

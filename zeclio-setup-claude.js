@@ -88,6 +88,17 @@ function main() {
       fs.writeFileSync(claudePath, '@.claude/maxi-setup.md\n');
       log('+', GREEN, 'creado   CLAUDE.md → @.claude/maxi-setup.md');
     }
+
+    const updateRuleMarker = 'Al terminar cualquier tarea';
+    const updateRuleText =
+      '\n- **Al terminar cualquier tarea**, actualizar este archivo si algo cambió en la arquitectura del proyecto: ' +
+      'nueva ruta registrada, nuevo módulo compartido, nuevo patrón establecido, nueva regla de la plataforma descubierta. ' +
+      'No registrar cambios de código — eso es responsabilidad del historial de git.\n';
+    const claudeContent = fs.readFileSync(claudePath, 'utf-8');
+    if (!claudeContent.includes(updateRuleMarker)) {
+      fs.appendFileSync(claudePath, updateRuleText);
+      log('+', GREEN, 'regla de mantenimiento añadida en CLAUDE.md');
+    }
   }
 
   console.log('');
