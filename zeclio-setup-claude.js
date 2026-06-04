@@ -124,7 +124,7 @@ function main() {
       log('+', GREEN, 'creado   project-state.md');
     }
 
-    const updateRuleMarker = 'Al terminar cualquier tarea';
+    const updateRuleMarker = 'actualizar `project-state.md`';
     const updateRuleText =
       '\n- **Al terminar cualquier tarea**, actualizar este archivo si algo cambió en la arquitectura del proyecto: ' +
       'nueva ruta registrada, nuevo módulo compartido, nuevo patrón establecido, nueva regla de la plataforma descubierta. ' +
