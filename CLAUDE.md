@@ -74,7 +74,7 @@ Both `templates/` and `templates-root/` are shipped with the package (listed in 
 
 ```
 templates/
-├── CLAUDE.md           ← instrucciones para Claude: verificar versión al inicio de sesión
+├── CLAUDE.md           ← instrucciones para Claude: verificar versión al inicio de sesión, tabla de docs de contexto (incluyendo .specify/memory/constitution.md)
 ├── docs/
 │   ├── login.md        ← @maxi/login — Keycloak, token$, exported API, session patterns
 │   ├── mwc.md          ← Maxi Web Components — full component reference, props, events
@@ -117,6 +117,8 @@ The `docs/` folder contains context documents loaded by Claude Code when it open
 | `mwc.md` | All `ms-*` / `Ms*` components: props, event names, refs, usage rules |
 | `root-config.md` | Registration flow, active routes, import maps per environment, cross-app communication |
 | `styleguide.md` | Full component catalog, form helpers, date utilities, permission API, strict usage rules |
+
+`maxi-setup.md` also points Claude to `.specify/memory/constitution.md` (at the project root), so Claude reads the project's governance principles in addition to the platform docs.
 
 ### Flags
 
