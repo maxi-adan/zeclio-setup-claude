@@ -12,7 +12,7 @@ This package (`@maxi/styleguide`) is the **single source of truth for UI compone
 
 Modern Web Component wrappers auto-generated for React. These are the **preferred components** for all new development.
 
-> **IMPORTANT FOR CLAUDE:** Before writing any code that uses an `ms-*` / `Ms*` component, **always read [`HOW-MWC-WORKS.md`](./HOW-MWC-WORKS.md)** to get the exact prop names, event names, and defaults. Do not rely on memory — prop and event names are non-obvious and differ from HTML standards (e.g. `activeTab` not `activeIndex`, `checkboxChange` not `change`, `clickEvent` not `click`).
+> **IMPORTANT FOR CLAUDE:** Before writing any code that uses an `ms-*` / `Ms*` component, **always read [`mwc.md`](./mwc.md)** to get the exact prop names, event names, and defaults. Do not rely on memory — prop and event names are non-obvious and differ from HTML standards (e.g. `activeTab` not `activeIndex`, `checkboxChange` not `change`, `clickEvent` not `click`).
 
 | Component         | Tag                 | Description                                                                                                                              |
 | ----------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
@@ -49,7 +49,7 @@ Modern Web Component wrappers auto-generated for React. These are the **preferre
 | `MsMeterGroup`    | `ms-meter-group`    | Group of comparative progress meters                                                                                                     |
 | `MsMultiselect`   | `ms-multiselect`    | Multi-select dropdown                                                                                                                    |
 | `MsNavbar`        | `ms-navbar`         | Collapsible lateral navigation sidebar with nested menus — props: `items`, `activeItemId`; methods: `collapse()`, `expand()`, `toggle()` |
-| `MsNotification`  | `ms-notification`   | Toast notification — call `ref.current.show({...})`                                                                                      |
+| `MsNotification`  | `ms-notification`   | Toast notification — toggle `visible` prop to show/hide; no methods                                                                      |
 | `MsPaginator`     | `ms-paginator`      | Standalone pagination controls                                                                                                           |
 | `MsPopover`       | `ms-popover`        | Floating popover panel                                                                                                                   |
 | `MsPreload`       | `ms-preload`        | Full-section or full-screen loading overlay                                                                                              |
@@ -174,7 +174,7 @@ Component events follow the `on` + camelCase event name convention. Never use th
 <MsInputField onInput={handler} />
 ```
 
-> Before using an event, verify its exact name in `HOW-MWC-WORKS.md`. Names do not always follow standard HTML patterns (`inputEvent`, not `input`; `clickEvent`, not `click`).
+> Before using an event, verify its exact name in `mwc.md`. Names do not always follow standard HTML patterns (`inputEvent`, not `input`; `clickEvent`, not `click`).
 
 ---
 
@@ -242,7 +242,7 @@ Form components emit `validationChange` with `{ isValid, fieldId, value, errorMe
 <MsInputField label="Email" invalid={!isEmailValid} errorMessage={emailError} />
 ```
 
-> To coordinate validity across a full form, use the `validationState` pattern documented in the "Advanced patterns" section of `HOW-MWC-WORKS.md`.
+> To coordinate validity across a full form, use the `validationState` pattern documented in the "Advanced patterns" section of `mwc.md`.
 
 ---
 
@@ -287,13 +287,13 @@ For confirmation dialogs, alerts, and notifications, always use `MsDialog` and `
   Do you want to continue?
 </MsDialog>;
 
-// For notifications — use the ref and show() method
-const notifRef = useRef(null);
-notifRef.current.show({
-  severity: "success",
-  summary: "Done",
-  detail: "Changes saved.",
-});
+// For notifications — toggle visible prop (no show() method exists)
+const [notif, setNotif] = useState({ visible: false, severity: "info", summary: "", detail: "" });
+function showNotif(severity, summary, detail, life = 3000) {
+  setNotif({ visible: true, severity, summary, detail });
+  setTimeout(() => setNotif(n => ({ ...n, visible: false })), life);
+}
+<MsNotification visible={notif.visible} severity={notif.severity} summary={notif.summary} detail={notif.detail} />;
 
 // INCORRECT
 alert("Do you want to continue?");
@@ -330,11 +330,10 @@ confirm("Are you sure?");
 
 Some components expose methods that must be called via a ref, not by querying the DOM.
 
-| Component        | Methods                                                |
-| ---------------- | ------------------------------------------------------ |
-| `MsNavbar`       | `collapse()`, `expand()`, `toggle()`                   |
-| `MsNotification` | `show({ severity, summary, detail, life? })`           |
-| `MsFileUpload`   | `upload()`, `clear()`, `getFiles()`, `setFiles(files)` |
+| Component        | Methods                                                                              |
+| ---------------- | ------------------------------------------------------------------------------------ |
+| `MsNavbar`       | `collapse()`, `expand()`, `toggle()`                                                 |
+| `MsFileUpload`   | `upload()`, `clear()`, `getFiles()`, `setFiles(files)`, `getElement()`, `getInput()` |
 
 ```tsx
 // CORRECT
@@ -346,7 +345,7 @@ navRef.current?.collapse();
 (document.querySelector("ms-navbar") as any).collapse();
 ```
 
-> For the full method signatures, see `HOW-MWC-WORKS.md` — section 7 (Advanced patterns) and each component's entry.
+> For the full method signatures, see `mwc.md` — section 7 (Advanced patterns) and each component's entry.
 
 ---
 
@@ -410,6 +409,63 @@ When a section loads its content for the first time (not as a response to an act
 
 // MsSpinner — only for actions or intermediate states
 ```
+
+---
+
+### 15. CSS overrides — always scope under class/customClass, never target internal classes globally
+
+When a component needs a CSS fix, always add the `class` or `customClass` prop to the component and scope the CSS under that selector. Never target internal component classes (like `.ms-dialog-header`, `.ms-dropdown-menu`) globally — it would affect all instances of that component in the project.
+
+```tsx
+// ✅ CORRECT — scoped under a class prop
+<MsDialog class="confirm-delete-dialog" header="Confirm" ...>
+
+// In CSS:
+.confirm-delete-dialog .ms-dialog-header h3 { padding-right: 2.5rem; }
+```
+
+```tsx
+// ❌ INCORRECT — targets ALL dialogs in the project
+// In CSS:
+.ms-dialog-header h3 { padding-right: 2.5rem; }
+```
+
+This applies to all components that expose `class` or `customClass`:
+`MsDialog` → `class` | `MsDropdown` → `class` | `MsMultiselect` → `class` | `MsTable` → `class` | `MsNavbar` → `customClass` | `MsMeterGroup` → `customClass` | `MsTooltip` → `class` | etc.
+
+---
+
+### 14. Form components in flex containers — always set explicit width
+
+`ms-*` custom elements render as `display: inline` by default. Inside a `display: flex` row they shrink to the width of their arrow icon — the placeholder disappears and the component looks broken. This only affects form/selection components: `MsDropdown`, `MsMultiselect`, `MsAutocomplete`, `MsCalendar`, `MsInputField`, `MsInputNumber`, `MsSelectButton`.
+
+**Always wrap each component in a sized div when using flex:**
+
+```tsx
+// ✅ CORRECT — wrapper div controls the flex item
+<div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-end' }}>
+  <div style={{ flex: '0 0 200px' }}>
+    <MsDropdown label="Estado" options={opts} onSelected={(e) => setVal(e.detail)} />
+  </div>
+  <div style={{ flex: '0 0 220px' }}>
+    <MsCalendar label="Fecha" onUpdate={(e) => setDate(e.detail)} />
+  </div>
+</div>
+
+// ✅ CORRECT — grid layouts work without wrappers (items fill the column)
+<div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem' }}>
+  <MsDropdown label="Estado" options={opts} onSelected={(e) => setVal(e.detail)} />
+  <MsCalendar label="Fecha" onUpdate={(e) => setDate(e.detail)} />
+</div>
+
+// ❌ INCORRECT — component collapses to minimum width, placeholder invisible
+<div style={{ display: 'flex', gap: '1rem' }}>
+  <MsDropdown label="Estado" options={opts} onSelected={(e) => setVal(e.detail)} />
+  <MsCalendar label="Fecha" onUpdate={(e) => setDate(e.detail)} />
+</div>
+```
+
+> For the full list of affected components and CSS selector approach, see `mwc.md` → Section 7 "Components in flex / grid layouts".
 
 ---
 

@@ -161,6 +161,16 @@ You **MUST** consider the user input before proceeding (if not empty).
    - **Core development**: Implement models, services, CLI commands, endpoints
    - **Integration work**: Database connections, middleware, logging, external services
    - **Polish and validation**: Unit tests, performance optimization, documentation
+   - **MAXI components in flex layouts**: When generating any component that places `ms-*` form components (`MsDropdown`, `MsMultiselect`, `MsAutocomplete`, `MsCalendar`, `MsInputField`, `MsInputNumber`, `MsSelectButton`) inside a `display: flex` container, **always** add a `className` to the container and add a scoped CSS rule targeting the component tag — never let the component sit bare in a flex row without explicit sizing. Pattern:
+     ```tsx
+     <div className="my-filter-row" style={{ display: 'flex', gap: '1rem' }}>
+       <MsDropdown ... />
+     </div>
+     ```
+     ```css
+     .my-filter-row ms-dropdown { flex: 0 0 200px; min-width: 0; }
+     ```
+   - **MAXI CSS overrides**: When any `ms-*` component needs a CSS fix, always add the `class` or `customClass` prop to the component and scope the fix under that selector. Never target internal component classes globally. See styleguide.md rule #15.
 
 8. Progress tracking and error handling:
    - Report progress after each completed task

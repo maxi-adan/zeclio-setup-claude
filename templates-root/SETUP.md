@@ -14,7 +14,9 @@ CLAUDE.md
   ├── @.claude/docs/login.md       ← API de autenticación Keycloak
   ├── @.claude/docs/root-config.md ← shell single-spa, rutas, import maps
   ├── @.claude/docs/styleguide.md  ← catálogo de componentes @maxi/styleguide
-  └── @.claude/docs/mwc.md         ← referencia completa MAXI Web Components
+  ├── @.claude/docs/mwc.md         ← referencia completa MAXI Web Components
+  ├── @.claude/docs/api.md         ← patrón HTTP: instance.js, auth headers, APP_CONFIG
+  └── @.claude/docs/state.md       ← Redux Toolkit, permissions slice, usePermissions hook
 ```
 
 No hay nada que "llamar" manualmente. Con que Claude Code abra una sesión en este directorio, carga todo el contexto.
@@ -50,12 +52,14 @@ En `.claude/maxi-setup.md`. CLAUDE.md lo importa con `@.claude/maxi-setup.md`. N
 
 Antes de escribir cualquier línea de código en un microfrontend ZEUS, Claude lee los docs relevantes. Esto está forzado por las reglas de CLAUDE.md:
 
-| Situación                           | Doc obligatorio              |
-| ----------------------------------- | ---------------------------- |
-| Cualquier componente `Ms*` / `ms-*` | `.claude/docs/mwc.md`        |
-| Formularios, tablas, botones, UI    | `.claude/docs/styleguide.md` |
-| Autenticación, token, sesión        | `.claude/docs/login.md`      |
-| Rutas, import maps, shell           | `.claude/docs/root-config.md` |
+| Situación                               | Doc obligatorio               |
+| --------------------------------------- | ----------------------------- |
+| Cualquier componente `Ms*` / `ms-*`     | `.claude/docs/mwc.md`         |
+| Formularios, tablas, botones, UI        | `.claude/docs/styleguide.md`  |
+| Autenticación, token, sesión            | `.claude/docs/login.md`       |
+| Rutas, import maps, shell               | `.claude/docs/root-config.md` |
+| Llamadas HTTP, servicios, axios         | `.claude/docs/api.md`         |
+| Redux, estado global, permisos en store | `.claude/docs/state.md`       |
 
 Todos los docs ya están cargados en contexto desde el inicio de sesión vía CLAUDE.md. Antes de pedir una feature, no necesitas pedirle a Claude que los lea — ya los tiene.
 

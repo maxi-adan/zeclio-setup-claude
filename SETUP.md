@@ -7,14 +7,18 @@ Este documento cubre todo lo necesario para que el flujo de sincronización de d
 ## Cómo funciona el sistema
 
 ```
-┌─────────────────────────────────┐     ┌─────────────────────────────────┐
-│   maxi-libs/web-components      │     │   ZEUS-Layout                   │
-│                                 │     │                                 │
-│  Editas componente              │     │  Editas doc manualmente         │
-│  → npm run build                │     │  (.claude/docs/*.md)            │
-│    genera mwc.md automático     │     │                                 │
-│  → npm run sync:docs            │     │  → npm run sync:docs            │
-└──────────────┬──────────────────┘     └───────────────┬─────────────────┘
+┌─────────────────────────────────┐     ┌─────────────────────────────────────────────┐
+│   maxi-libs/web-components      │     │   ZEUS-Layout                               │
+│                                 │     │                                             │
+│  Editas componente              │     │  Editas docs manualmente                   │
+│  → npm run build                │     │  (.claude/docs/*.md)                        │
+│    genera mwc.md automático     │     │                                             │
+│                                 │     │  Docs actuales:                             │
+│  Docs actuales:                 │     │    login.md, root-config.md, styleguide.md  │
+│    mwc.md                       │     │    api.md, state.md                         │
+│                                 │     │                                             │
+│  → npm run sync:docs            │     │  → npm run sync:docs                        │
+└──────────────┬──────────────────┘     └───────────────┬─────────────────────────────┘
                │                                        │
                └──────────────────┬─────────────────────┘
                                   │
@@ -243,15 +247,29 @@ Las inyecciones en `CLAUDE.md` están hardcodeadas en `zeclio-setup-claude.js`. 
 
 ## 6. Agregar un nuevo doc de plataforma
 
-1. Crea el `.md` en `.claude/docs/` dentro de `maxi-libs/web-components`
-2. Agrega un frontmatter con `description:` para que aparezca correctamente en `maxi-setup.md`:
+Los docs se crean en el repo fuente según su naturaleza:
+
+| Tipo de doc | Repo fuente | Cómo se genera |
+|---|---|---|
+| Docs de componentes `ms-*` | `maxi-libs/web-components` | Auto-generado por `npm run build` a partir de los `readme.md` de Stencil |
+| Docs de plataforma ZEUS (auth, rutas, HTTP, estado) | `ZEUS-Layout` | Redactado y mantenido manualmente en `.claude/docs/` |
+
+**Desde cualquiera de los dos repos:**
+
+1. Crea o edita el `.md` en `.claude/docs/` dentro del repo correspondiente.
+2. Agrega frontmatter con `description:` para que aparezca correctamente en `maxi-setup.md`:
    ```markdown
    ---
    name: mi-doc
-   description: Cuándo y cómo usar este módulo
+   description: Cuándo y cómo usar este módulo — aparece en la tabla de maxi-setup.md
    ---
    ```
-3. Corre `npm run sync:docs` — el script detecta el archivo nuevo, lo sube y registra la fila en `maxi-setup.md` automáticamente
+3. Corre `npm run sync:docs` — el script detecta el archivo nuevo o modificado, lo sube a `templates/docs/` en `zeclio-setup-claude` y abre un PR.
+4. Si es un doc nuevo, el script agrega automáticamente la fila en `maxi-setup.md`.
+
+> **Docs actuales y su repo fuente:**
+> - `mwc.md` → `maxi-libs/web-components` (auto-generado)
+> - `login.md`, `root-config.md`, `styleguide.md`, `api.md`, `state.md` → `ZEUS-Layout` (manual)
 
 ---
 

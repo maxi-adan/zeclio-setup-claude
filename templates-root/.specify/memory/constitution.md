@@ -53,10 +53,17 @@ El CSS global (`global.css` o `global-zeclio.css`) se importa una sola vez en el
 Nunca re-importarlo dentro de componentes individuales.
 Para personalizar el tema, sobreescribir las CSS custom properties en el stylesheet global del proyecto.
 
+Nunca targetear clases internas de componentes `ms-*` sin scope (ej. `.ms-dialog-header { ... }` afecta todos los diálogos del proyecto).
+Siempre agregar el prop `class` o `customClass` al componente y scopear el override bajo ese selector:
+```css
+/* ✅ */ .mi-dialogo .ms-dialog-header h3 { padding-right: 2.5rem; }
+/* ❌ */ .ms-dialog-header h3 { padding-right: 2.5rem; }
+```
+
 ## Governance
 
 Esta constitution tiene precedencia sobre cualquier otra convención del proyecto.
 Cualquier violación detectada durante `/speckit-plan` o `/speckit-implement` debe reportarse antes de continuar.
 Para agregar o modificar principios, usar `/speckit-constitution`.
 
-**Version**: 1.0.0 | **Ratified**: 2026-06-03 | **Last Amended**: 2026-06-03
+**Version**: 1.1.0 | **Ratified**: 2026-06-03 | **Last Amended**: 2026-06-04

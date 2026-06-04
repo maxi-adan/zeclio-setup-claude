@@ -34,10 +34,12 @@ npm view zeclio-setup-claude version --registry=https://artifacts.maxilabs.net/r
 
 Los archivos en `.claude/docs/` describen la arquitectura y las APIs de la plataforma ZEUS. Léelos cuando trabajes en cualquier microfrontend:
 
-| Archivo | Cuándo leerlo |
-|---|---|
-| `docs/login.md` | Autenticación, sesión Keycloak, consumo de `token$` |
-| `docs/mwc.md` | Cualquier componente `ms-*` / `Ms*` |
-| `docs/root-config.md` | Rutas, import maps, registro de microfrontends |
-| `docs/styleguide.md` | Componentes UI, helpers, permisos de `@maxi/styleguide` |
-| `.specify/memory/constitution.md` | Principios y gobernanza del proyecto |
+| Archivo                           | Cuándo leerlo                                                                     |
+| --------------------------------- | --------------------------------------------------------------------------------- |
+| `docs/login.md`                   | Autenticación, sesión Keycloak, consumo de `token$`                               |
+| `docs/mwc.md`                     | Cualquier componente `ms-*` / `Ms*`                                               |
+| `docs/root-config.md`             | Rutas, import maps, registro de microfrontends                                    |
+| `docs/styleguide.md`              | Componentes UI, helpers, permisos de `@maxi/styleguide`                           |
+| `docs/api.md`                     | Cualquier llamada HTTP — patrón `instance.js`, auth headers, `APP_CONFIG_*`       |
+| `docs/state.md`                   | Redux Toolkit, store, permissions slice, `usePermissions` hook, guard en el router |
+| `.specify/memory/constitution.md` | Principios y gobernanza del proyecto                                              |

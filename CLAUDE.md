@@ -79,7 +79,9 @@ templates/
 │   ├── login.md        ← @maxi/login — Keycloak, token$, exported API, session patterns
 │   ├── mwc.md          ← Maxi Web Components — full component reference, props, events
 │   ├── root-config.md  ← root-config — routes, import maps, startup sequence, inter-app comms
-│   └── styleguide.md   ← @maxi/styleguide — component catalog, hooks, permission utilities, rules
+│   ├── styleguide.md   ← @maxi/styleguide — component catalog, hooks, permission utilities, rules
+│   ├── api.md          ← HTTP pattern: instance.js, validateToken, token$ interceptor, APP_CONFIG_*
+│   └── state.md        ← Redux Toolkit in single-spa: store, permissions slice, usePermissions hook
 ├── settings.json
 └── skills/
     └── speckit-*/SKILL.md
@@ -117,6 +119,8 @@ The `docs/` folder contains context documents loaded by Claude Code when it open
 | `mwc.md` | All `ms-*` / `Ms*` components: props, event names, refs, usage rules |
 | `root-config.md` | Registration flow, active routes, import maps per environment, cross-app communication |
 | `styleguide.md` | Full component catalog, form helpers, date utilities, permission API, strict usage rules |
+| `api.md` | HTTP service pattern: `instance.js` with interceptors, `validateToken`+`token$` for auth headers, `window.APP_CONFIG_*` for base URL, `logout()` on invalid token |
+| `state.md` | Redux Toolkit in single-spa: isolated store per microfrontend, permissions slice, `usePermissions` hook, Provider setup, when to use Redux vs local state |
 
 `maxi-setup.md` also points Claude to `.specify/memory/constitution.md` (at the project root), so Claude reads the project's governance principles in addition to the platform docs.
 

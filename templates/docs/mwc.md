@@ -59,6 +59,62 @@ return (
 
 ---
 
+### `removeChild` en componentes con popup/overlay — estado de la librería
+
+**Causa raíz:** los componentes con `shadow: false` que usan renderizado condicional (`{condition && <div>}`) para mostrar/ocultar un popup o overlay pueden lanzar `NotFoundError: Failed to execute 'removeChild' on 'Node'` cuando Stencil intenta reconciliar el vdom justo mientras un evento externo (click-outside, touchstart) todavía propaga sobre el mismo nodo.
+
+**Patrón seguro** (usado en `MsDialog` y `MsNotification`):
+```tsx
+// ✅ El nodo siempre está en el DOM — Stencil nunca llama removeChild
+<div class={{ 'ms-dialog-backdrop': true, 'visible': this.visible }}>
+```
+
+**Patrón problemático** — genera el error en race conditions:
+```tsx
+// ❌ Stencil intenta removeChild cuando condition cambia a false
+{condition && <div ref={el => (this.popupRef = el)}>...</div>}
+```
+
+**Estado actual por componente:**
+
+| Componente | Elemento afectado | Estado |
+|---|---|---|
+| `MsDialog` | backdrop overlay | ✅ **Corregido** — usa CSS class toggle |
+| `MsNotification` | elemento completo | ✅ **Seguro** — usa CSS class toggle |
+| `MsPopover` | contenido del popover | ✅ **Seguro** — usa CSS class `ms-popover-open` |
+| `MsDropdown` | `ms-dropdown-menu` (×2 paths) | ⚠️ **Pendiente** — renderizado condicional + `menuRef` |
+| `MsAutocomplete` | `ms-autocomplete-list` (×2 paths) | ⚠️ **Pendiente** — renderizado condicional + `listRef` |
+| `MsMultiselect` | `ms-multiselect-menu` (×2 paths) | ⚠️ **Pendiente** — renderizado condicional + `menuRef` |
+| `MsCalendar` | popup completo (×2 paths) | ⚠️ **Pendiente** — condicional + `calendarRef` + resize listener |
+| `MsSidebar` | `ms-sidebar-overlay` | ⚠️ **Pendiente** — el panel es seguro; el overlay no |
+| `MsNavbar` | submenús + toggle tooltip/button | ⚠️ **Pendiente** — condicional en submenús expandibles |
+| `MsTooltip` | `ms-tooltip-content` | ⚠️ **Pendiente** — condicional (sin ref, menor riesgo) |
+| `MsInputPassword` | feedback overlay | 🔵 **Bajo riesgo** — `shadow: true`, DOM gestionado solo por Stencil |
+
+**Fix estándar para los pendientes** — reemplazar renderizado condicional por `display: none`:
+```tsx
+// Cambiar esto:
+{this.isOpen && <div class="ms-dropdown-menu" ref={el => (this.menuRef = el)}>...</div>}
+
+// Por esto:
+<div
+  class="ms-dropdown-menu"
+  ref={el => (this.menuRef = el)}
+  style={{ display: this.isOpen ? undefined : 'none' }}
+>
+  ...
+</div>
+```
+Y agregar guard en métodos que usen los refs de posición:
+```tsx
+private calculateMenuPosition() {
+  if (!this.isOpen || !this.menuRef) return;  // guard
+  ...
+}
+```
+
+---
+
 ---
 
 ## Table of Contents
@@ -536,30 +592,44 @@ interface GaugeArc {
 
 #### `ms-input-field`
 
-Text field with floating label, validation and error states.
+Text field with floating label, validation and error states. `shadow: false`. Always renders `type="text"` — no `type` prop.
 
-| Prop           | Type      | Default | Description                         |
-| -------------- | --------- | ------- | ----------------------------------- |
-| `idComponent`  | `string`  | —       | HTML `id` for the input             |
-| `label`        | `string`  | —       | Floating label                      |
-| `placeholder`  | `string`  | —       | Input placeholder                   |
-| `value`        | `any`     | —       | Current value                       |
-| `maxLength`    | `number`  | —       | Maximum character count             |
-| `disabled`     | `boolean` | `false` | Disabled state                      |
-| `required`     | `boolean` | `false` | Required field                      |
-| `invalid`      | `boolean` | `false` | Visual error state                  |
-| `errorMessage` | `string`  | —       | Error message shown below the field |
+| Prop           | Type      | Default            | Description                                  |
+| -------------- | --------- | ------------------ | -------------------------------------------- |
+| `idComponent`  | `string`  | `'ms-input-field'` | HTML `id` for the input                      |
+| `class`        | `string`  | `null`             | Extra CSS class on the `<input>` element     |
+| `label`        | `string`  | `null`             | Floating label (see render modes below)      |
+| `placeholder`  | `string`  | `null`             | Placeholder text                             |
+| `value`        | `any`     | `null`             | Current value (mutable — updated on input)   |
+| `maxLength`    | `number`  | `null`             | Maximum character count                      |
+| `disabled`     | `boolean` | `null`             | Disabled state                               |
+| `required`     | `boolean` | `false`            | Required field; triggers built-in validation |
+| `invalid`      | `boolean` | `false`            | External error state                         |
+| `errorMessage` | `string`  | `null`             | Error text (only shown when `invalid=true`)  |
+
+**Render modes:**
+- **With `label`**: floating label pattern. Placeholder is only shown when the field is focused.
+- **Without `label`**: standard input. Placeholder always visible.
+
+**Validation logic:**
+- `isInvalid = invalid || internalInvalid` (either external flag or required-check failure)
+- When `required=true` and field is empty → shows `"This field is required"` (hardcoded, not configurable)
+- When `invalid=true` and `errorMessage` is set → shows `errorMessage`
+- `errorMessage` is **ignored** if only `required` validation fails (the built-in message takes over)
 
 **Events:**
 
-| Event              | Payload            | Description               |
-| ------------------ | ------------------ | ------------------------- |
-| `focusEvent`       | `FocusEvent`       | On field focus            |
-| `blurEvent`        | `FocusEvent`       | On focus lost             |
-| `inputEvent`       | `string`           | On typing (current value) |
-| `changeEvent`      | `string`           | On value change           |
-| `keyDownEvent`     | `KeyboardEvent`    | On key press              |
-| `validationChange` | `ValidationDetail` | Validation state change   |
+| Event              | Payload                                              | Description                                |
+| ------------------ | ---------------------------------------------------- | ------------------------------------------ |
+| `focusEvent`       | `string`                                             | Current value when field receives focus    |
+| `clickEvent`       | `string`                                             | Current value on click                     |
+| `inputEvent`       | `string`                                             | Current value on every keystroke           |
+| `changeEvent`      | `string`                                             | Current value on blur/commit               |
+| `blurEvent`        | `string`                                             | Current value when focus leaves            |
+| `keyDownEvent`     | `{ value: string; event: KeyboardEvent }`            | Value + native event on key press          |
+| `validationChange` | `{ isValid: boolean; fieldId: string; value: any; errorMessage: string }` | Emitted when validity changes |
+
+> All single-value events emit the **current string value of the input**, not a DOM event object.
 
 ```html
 <!-- Vanilla -->
@@ -567,7 +637,6 @@ Text field with floating label, validation and error states.
   label="Email"
   placeholder="user@example.com"
   required
-  error-message="Email is required"
 ></ms-input-field>
 ```
 
@@ -577,7 +646,8 @@ Text field with floating label, validation and error states.
   label="Email"
   placeholder="user@example.com"
   required
-  errorMessage="Email is required"
+  invalid={isInvalid}
+  errorMessage="Invalid email format"
   onInputEvent={(e) => setEmail(e.detail)}
   onValidationChange={(e) => setValid(e.detail.isValid)}
 />
@@ -587,24 +657,44 @@ Text field with floating label, validation and error states.
 
 #### `ms-input-password`
 
-Password input with optional strength indicator and show/hide toggle.
+Password input with optional strength indicator and show/hide toggle. **`shadow: true`** — CSS is encapsulated.
 
-| Prop          | Type               | Default                     | Description                                  |
-| ------------- | ------------------ | --------------------------- | -------------------------------------------- |
-| `label`       | `string`           | `''`                        | Floating label                               |
-| `placeholder` | `string`           | `''`                        | Input placeholder                            |
-| `value`       | `string`           | `''`                        | Current password value                       |
-| `disabled`    | `boolean`          | `false`                     | Disabled state                               |
-| `invalid`     | `boolean`          | `false`                     | Visual error state                           |
-| `completed`   | `boolean`          | `false`                     | Mark as completed/confirmed                  |
-| `toggleMask`  | `boolean`          | `false`                     | Show eye icon to reveal/hide the password    |
-| `feedback`    | `boolean`          | `false`                     | Show strength indicator bar below the field  |
-| `promptLabel` | `string`           | `'Please enter a password'` | Strength hint before typing                  |
-| `weakLabel`   | `string`           | `'Weak'`                    | Strength label — weak                        |
-| `mediumLabel` | `string`           | `'Medium'`                  | Strength label — medium                      |
-| `strongLabel` | `string`           | `'Strong'`                  | Strength label — strong                      |
-| `mediumRegex` | `RegExp \| string` | —                           | Regex that classifies the password as medium |
-| `strongRegex` | `RegExp \| string` | —                           | Regex that classifies the password as strong |
+| Prop          | Type               | Default                     | Description                                          |
+| ------------- | ------------------ | --------------------------- | ---------------------------------------------------- |
+| `label`       | `string`           | `''`                        | Floating label (floats when focused or has value)    |
+| `placeholder` | `string`           | `''`                        | Input placeholder                                    |
+| `value`       | `string`           | `''`                        | Controlled value — **not mutable**; component tracks input internally via `internalValue` state |
+| `disabled`    | `boolean`          | `false`                     | Disabled state                                       |
+| `invalid`     | `boolean`          | `false`                     | Visual error state                                   |
+| `completed`   | `boolean`          | `false`                     | Mark as completed/confirmed (adds `.completed` host class) |
+| `toggleMask`  | `boolean`          | `false`                     | Show eye icon to reveal/hide the password            |
+| `feedback`    | `boolean`          | `false`                     | Show strength overlay — **only visible when focused** |
+| `promptLabel` | `string`           | `'Please enter a password'` | Label shown before typing (strength = `none`)        |
+| `weakLabel`   | `string`           | `'Weak'`                    | Strength label — weak                                |
+| `mediumLabel` | `string`           | `'Medium'`                  | Strength label — medium                              |
+| `strongLabel` | `string`           | `'Strong'`                  | Strength label — strong                              |
+| `mediumRegex` | `RegExp \| string` | see defaults below          | Regex that classifies the password as medium         |
+| `strongRegex` | `RegExp \| string` | see defaults below          | Regex that classifies the password as strong         |
+
+**Strength evaluation** (checked in order: strong → medium → weak):
+- `strong` default: `^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.{8,}).*$` (8+ chars, lower + upper + digit)
+- `medium` default: `^(((?=.*[a-z])(?=.*[A-Z]))|((?=.*[a-z])(?=.*[0-9]))|((?=.*[A-Z])(?=.*[0-9])))(?=.{6,}).*$` (6+ chars, 2 of: lower/upper/digit)
+- Empty value → `'none'` (shows `promptLabel`)
+
+**`mediumRegex`/`strongRegex` accepted string formats** (via HTML attribute, since `RegExp` is JS-only):
+- `/pattern/flags` — e.g. `medium-regex="/^.{8,}$/i"`
+- `{"pattern":"...","flags":"..."}` — JSON object string
+- Plain string — treated as pattern with no flags
+
+**Slots** (inside the `feedback` strength overlay):
+
+| Slot     | Description                              |
+| -------- | ---------------------------------------- |
+| `header` | Content above the strength bar           |
+| `footer` | Content below the strength bar           |
+
+**Host CSS classes** (for external styling when `shadow: true` doesn't cover it):
+`invalid` · `completed` · `disabled` · `strength-none` · `strength-weak` · `strength-medium` · `strength-strong`
 
 **Events:**
 
@@ -630,41 +720,53 @@ Password input with optional strength indicator and show/hide toggle.
 
 #### `ms-input-number`
 
-Numeric input with locale formatting, currency support, and optional +/− controls.
+Numeric input with locale formatting, currency support, and optional +/− spinner controls. `shadow: false`. Renders `type="text"` internally — formatting is managed in JS.
 
-| Prop                | Type                     | Default             | Description                                                           |
-| ------------------- | ------------------------ | ------------------- | --------------------------------------------------------------------- |
-| `idComponent`       | `string`                 | `'ms-input-number'` | HTML `id`                                                             |
-| `label`             | `string \| null`         | `null`              | Floating label                                                        |
-| `value`             | `number`                 | —                   | Current value (mutable)                                               |
-| `mode`              | `'currency' \| 'number'` | —                   | **Required.** `'number'` for plain numeric; `'currency'` for monetary |
-| `currency`          | `string`                 | `'USD'`             | ISO 4217 currency code (only when `mode='currency'`)                  |
-| `locale`            | `string`                 | `'en-US'`           | BCP 47 locale for number formatting                                   |
-| `min`               | `number`                 | —                   | Minimum value                                                         |
-| `max`               | `number`                 | —                   | Maximum value                                                         |
-| `maxLength`         | `number`                 | `20`                | Maximum character length of the input                                 |
-| `maxFractionDigits` | `number`                 | `2`                 | Maximum decimal places shown                                          |
-| `minFractionDigits` | `number`                 | `0`                 | Minimum decimal places shown                                          |
-| `useGrouping`       | `boolean`                | `true`              | Show thousands separator                                              |
-| `showControls`      | `boolean`                | `false`             | Show +/− spinner buttons                                              |
-| `prefixInput`       | `string`                 | —                   | Text prefix shown inside the input                                    |
-| `suffix`            | `string`                 | —                   | Text suffix shown inside the input                                    |
-| `placeholder`       | `string`                 | —                   | Placeholder text                                                      |
-| `disabled`          | `boolean`                | `false`             | Disabled state                                                        |
-| `required`          | `boolean`                | `false`             | Required field                                                        |
-| `invalid`           | `boolean`                | `false`             | Visual error state                                                    |
-| `errorMessage`      | `string \| null`         | `null`              | Error message below the field                                         |
+| Prop                | Type                     | Default             | Description                                                          |
+| ------------------- | ------------------------ | ------------------- | -------------------------------------------------------------------- |
+| `idComponent`       | `string`                 | `'ms-input-number'` | HTML `id`                                                            |
+| `class`             | `string`                 | `undefined`         | Extra CSS class on the `<input>` element                             |
+| `label`             | `string \| null`         | `null`              | Floating label (see render modes below)                              |
+| `value`             | `number`                 | `undefined`         | Current value (mutable — updated on input)                           |
+| `mode`              | `'currency' \| 'number'` | `undefined`         | Formatting mode. If omitted, formats as plain number (no currency)   |
+| `currency`          | `string`                 | `'USD'`             | ISO 4217 code — only used when `mode='currency'`                     |
+| `locale`            | `string`                 | `'en-US'`           | BCP 47 locale for `Intl.NumberFormat`                                |
+| `min`               | `number`                 | `undefined`         | Minimum value — clamped **on blur**, not during typing               |
+| `max`               | `number`                 | `undefined`         | Maximum value — clamped **on blur**, not during typing               |
+| `maxLength`         | `number`                 | `20`                | Max character length of the raw input string                         |
+| `maxFractionDigits` | `number`                 | `2`                 | Maximum decimal places                                               |
+| `minFractionDigits` | `number`                 | `0`                 | Minimum decimal places (pads with zeros)                             |
+| `useGrouping`       | `boolean`                | `true`              | Show thousands separator                                             |
+| `showControls`      | `boolean`                | `false`             | Show ▲/▼ spinner buttons. Step is **±1** (not configurable)         |
+| `prefixInput`       | `string`                 | `undefined`         | Text prepended inside the input value string (not a DOM element)     |
+| `suffix`            | `string`                 | `undefined`         | Text appended inside the input value string (not a DOM element)      |
+| `placeholder`       | `string`                 | `undefined`         | Placeholder (only visible when focused, if `label` is set)           |
+| `disabled`          | `boolean`                | `false`             | Disabled state                                                       |
+| `required`          | `boolean`                | `false`             | Required field — triggers built-in validation                        |
+| `invalid`           | `boolean`                | `false`             | External error state                                                 |
+| `errorMessage`      | `string \| null`         | `null`              | Error text — only shown when `invalid=true`                          |
+
+**Render modes:**
+- **With `label`**: floating label. Placeholder only shown when focused.
+- **Without `label`**: standard input. Placeholder always visible.
+
+**Validation logic** (identical to `ms-input-field`):
+- `required=true` + empty → shows `"This field is required"` (hardcoded)
+- `invalid=true` + `errorMessage` set → shows `errorMessage`
+- `errorMessage` is ignored when only `required` fails
 
 **Events:**
 
-| Event              | Payload            | Description             |
-| ------------------ | ------------------ | ----------------------- |
-| `focusEvent`       | `number`           | On field focus          |
-| `blurEvent`        | `number`           | On focus lost           |
-| `clickEvent`       | `number`           | On field click          |
-| `inputEvent`       | `number`           | On typing               |
-| `changeEvent`      | `number`           | On value committed      |
-| `validationChange` | `ValidationDetail` | Validation state change |
+| Event              | Payload                                                                   | Description                                  |
+| ------------------ | ------------------------------------------------------------------------- | -------------------------------------------- |
+| `focusEvent`       | `number \| undefined`                                                     | Current numeric value on focus               |
+| `clickEvent`       | `number \| undefined`                                                     | Current numeric value on click               |
+| `inputEvent`       | `number \| null`                                                          | Parsed numeric value on each keystroke       |
+| `changeEvent`      | `number \| null`                                                          | Parsed numeric value on blur/spinner click   |
+| `blurEvent`        | `number \| undefined`                                                     | Current value (after clamp) when focus leaves |
+| `validationChange` | `{ isValid: boolean; fieldId: string; value: any; errorMessage: string }` | Emitted when validity changes                |
+
+> Events emit `null` when the field is empty (parsed result of empty string is `null`).
 
 ```html
 <ms-input-number
@@ -684,7 +786,8 @@ Numeric input with locale formatting, currency support, and optional +/− contr
   min={1}
   max={100}
   showControls
-  onChangeEvent={(e) => setQty(e.detail)}
+  onInputEvent={(e) => setQty(e.detail)}
+  onChangeEvent={(e) => commitQty(e.detail)}
 />
 ```
 
@@ -692,40 +795,60 @@ Numeric input with locale formatting, currency support, and optional +/− contr
 
 #### `ms-input-otp`
 
-OTP (One-Time Password) input. Renders N individual fields for a pin code.
+OTP (One-Time Password) input. Renders N individual single-character boxes. `shadow: false`.
 
-| Prop           | Type                                | Default          | Description                   |
-| -------------- | ----------------------------------- | ---------------- | ----------------------------- |
-| `idComponent`  | `string \| null`                    | `'ms-input-otp'` | HTML `id`                     |
-| `length`       | `number`                            | `4`              | Number of input boxes         |
-| `type`         | `'numeric' \| 'text' \| 'password'` | `'text'`         | Input character type          |
-| `value`        | `any \| null`                       | `null`           | Full current code (mutable)   |
-| `disabled`     | `boolean`                           | `false`          | Disabled state                |
-| `invalid`      | `boolean`                           | `false`          | Visual error state            |
-| `autoFocus`    | `boolean`                           | `false`          | Focus the first box on mount  |
-| `placeholder`  | `string`                            | `''`             | Placeholder character per box |
-| `errorMessage` | `string \| null`                    | `null`           | Error message below the field |
-| `required`     | `boolean`                           | `false`          | Required field                |
-| `customClass`  | `string`                            | `''`             | Extra CSS class               |
+| Prop           | Type                                | Default          | Description                                          |
+| -------------- | ----------------------------------- | ---------------- | ---------------------------------------------------- |
+| `idComponent`  | `string \| null`                    | `'ms-input-otp'` | HTML `id`                                            |
+| `length`       | `number`                            | `4`              | Number of input boxes                                |
+| `type`         | `'numeric' \| 'text' \| 'password'` | `'text'`         | Character type (see below)                           |
+| `value`        | `any \| null`                       | `null`           | Full code as string (mutable, reactive via `@Watch`) |
+| `disabled`     | `boolean`                           | `false`          | Disabled state (sets `readOnly` + `disabled`)        |
+| `invalid`      | `boolean`                           | `false`          | External error state                                 |
+| `autoFocus`    | `boolean`                           | `false`          | Focus first box on mount (100 ms delay)              |
+| `placeholder`  | `string`                            | `''`             | Placeholder character shown in each empty box        |
+| `errorMessage` | `string \| null`                    | `null`           | Error text — only shown when `invalid=true`          |
+| `required`     | `boolean`                           | `false`          | Required — valid only when **all** boxes are filled  |
+| `customClass`  | `string`                            | `''`             | Extra CSS class on each box                          |
+
+**`type` rendering:**
+- `'text'` → `type="text"` on each input
+- `'password'` → `type="password"` on each input (chars masked)
+- `'numeric'` → `type="text"` + `inputMode="numeric"` (numeric mobile keyboard) + strips non-digits on input and paste
+
+**Keyboard behavior:**
+- Typing a character auto-advances focus to the next box
+- `Backspace` on an empty box moves focus back to the previous box
+
+**Paste:**
+- Handles `paste` on the container; fills boxes left-to-right up to `length`
+- If `type='numeric'`, non-digit characters are stripped before filling
+- Fires `completeEvent` with the resulting joined string after paste
+
+**Validation (`required`):**
+- Valid only when `value.trim().length === length` (all boxes filled)
+- Falls back to `"This field is required"` when incomplete (hardcoded)
+- `errorMessage` only shown when `invalid=true`
 
 **Events:**
 
-| Event              | Payload            | Description                       |
-| ------------------ | ------------------ | --------------------------------- |
-| `completeEvent`    | `string`           | Emitted when all boxes are filled |
-| `inputEvent`       | `string`           | Emitted on each keystroke         |
-| `focusEvent`       | `number`           | Box focused (index)               |
-| `blurEvent`        | `number`           | Box blurred (index)               |
-| `validationChange` | `ValidationDetail` | Validation state change           |
+| Event              | Payload                                                                   | Description                                              |
+| ------------------ | ------------------------------------------------------------------------- | -------------------------------------------------------- |
+| `inputEvent`       | `string`                                                                  | Joined value on every keystroke                          |
+| `completeEvent`    | `string`                                                                  | Joined value on every keystroke **and** on paste — not just when all boxes are filled |
+| `focusEvent`       | `number`                                                                  | Index of the box that received focus                     |
+| `blurEvent`        | `number`                                                                  | Index of the box that lost focus                         |
+| `validationChange` | `{ isValid: boolean; fieldId: string; value: string; errorMessage: string }` | Emitted when validity changes                         |
+
+> `completeEvent` fires on **every** keystroke (and paste) with the current partial or full string — not only when all boxes are filled. Use `e.detail.length === length` to detect a truly complete code.
 
 ```html
 <ms-input-otp length="6" type="numeric"></ms-input-otp>
 <script>
-  document
-    .querySelector("ms-input-otp")
-    .addEventListener("completeEvent", (e) => {
-      console.log("Code:", e.detail); // e.g. "123456"
-    });
+  const otp = document.querySelector("ms-input-otp");
+  otp.addEventListener("completeEvent", (e) => {
+    if (e.detail.length === 6) verifyCode(e.detail);
+  });
 </script>
 ```
 
@@ -735,7 +858,9 @@ OTP (One-Time Password) input. Renders N individual fields for a pin code.
   length={6}
   type="numeric"
   autoFocus
-  onCompleteEvent={(e) => verifyCode(e.detail)}
+  onCompleteEvent={(e) => {
+    if (e.detail.length === 6) verifyCode(e.detail);
+  }}
 />
 ```
 
@@ -743,21 +868,31 @@ OTP (One-Time Password) input. Renders N individual fields for a pin code.
 
 #### `ms-input-switch`
 
-Toggle switch (on/off).
+Toggle switch (on/off). `shadow: false`.
 
-| Prop              | Type      | Default | Description                                   |
-| ----------------- | --------- | ------- | --------------------------------------------- |
-| `checked`         | `boolean` | `false` | Whether the switch is on (reflected, mutable) |
-| `disabled`        | `boolean` | `false` | Disabled state                                |
-| `tooltip`         | `string`  | —       | Tooltip text shown on hover                   |
-| `tooltipPosition` | `string`  | —       | Tooltip placement (e.g. `'right'`)            |
+| Prop              | Type                            | Default     | Description                                                   |
+| ----------------- | ------------------------------- | ----------- | ------------------------------------------------------------- |
+| `checked`         | `boolean`                       | `false`     | Checked state — `reflect: true`, `mutable: true`              |
+| `class`           | `string`                        | `undefined` | Extra CSS class — **only applied when `tooltip` is also set** |
+| `disabled`        | `boolean`                       | `undefined` | Disabled state                                                |
+| `tooltip`         | `string`                        | `undefined` | Tooltip text. When not set, `ms-tooltip` is not rendered      |
+| `tooltipPosition` | `'top'\|'bottom'\|'left'\|'right'` | `undefined` | Tooltip placement. Source type is `Position.Right` (likely should be `Position` — all 4 values work at runtime) |
 
-> **Note:** there is no `label` prop. Place a `<label>` element next to the component manually if a label is needed.
+> **No `label` prop.** Place a `<label>` element next to the component manually if a label is needed.
 
-**Events:** `changeEvent` — emits `boolean` with the new checked state.
+> **`class` bug:** `class` is only applied to the inner `<label>` when `tooltip` is present. Without `tooltip`, the label hardcodes `class="ms-switch"` and `class` is ignored.
+
+**Events:**
+
+| Event         | Payload   | Description                           |
+| ------------- | --------- | ------------------------------------- |
+| `changeEvent` | `boolean` | New checked state on every toggle     |
 
 ```html
 <ms-input-switch checked></ms-input-switch>
+
+<!-- With tooltip -->
+<ms-input-switch tooltip="Enable notifications" tooltip-position="right"></ms-input-switch>
 ```
 
 ```tsx
@@ -774,82 +909,138 @@ Toggle switch (on/off).
 
 Styled checkbox with label support.
 
-| Prop       | Type      | Default | Description    |
-| ---------- | --------- | ------- | -------------- |
-| `checked`  | `boolean` | `false` | Checked state  |
-| `disabled` | `boolean` | `false` | Disabled       |
-| `label`    | `string`  | —       | Label text     |
-| `value`    | `any`     | —       | Checkbox value |
-| `invalid`  | `boolean` | `false` | Error state    |
+| Prop       | Attribute  | Type      | Default     | Description                                                           |
+| ---------- | ---------- | --------- | ----------- | --------------------------------------------------------------------- |
+| `checked`  | `checked`  | `boolean` | `false`     | Checked state. Reflected to HTML attribute; can be set programmatically |
+| `disabled` | `disabled` | `boolean` | `undefined` | Disabled state                                                        |
+| `label`    | `label`    | `string`  | `undefined` | Label text rendered as `<label htmlFor={inputId}>`                   |
+| `inputId`  | `input-id` | `string`  | `undefined` | `id` on the inner `<input>` — required for label click to work       |
+| `name`     | `name`     | `string`  | `undefined` | HTML `name` attribute — use to group in forms                        |
+| `value`    | `value`    | `string`  | `undefined` | HTML `value` attribute on the inner `<input>`                        |
+| `class`    | `class`    | `string`  | `undefined` | Extra CSS class applied to the inner `<input>` element               |
 
-**Events:** `checkboxChange` — emits `boolean` with the new checked state.
+> No `invalid` or `required` props — this component has no built-in validation state.
+
+**Events:** `checkboxChange` — emits `boolean` (the new `checked` state).
+
+```tsx
+// React
+<MsCheckbox
+  inputId="agree"
+  name="agree"
+  label="I accept the terms"
+  checked={accepted}
+  onCheckboxChange={(e) => setAccepted(e.detail)} // e.detail = boolean
+/>
+```
 
 ---
 
 #### `ms-radio`
 
-Styled radio button.
+Styled radio button. `shadow: false` — external CSS penetrates.
 
-| Prop       | Type      | Default | Description                       |
-| ---------- | --------- | ------- | --------------------------------- |
-| `checked`  | `boolean` | `false` | Selected state                    |
-| `disabled` | `boolean` | `false` | Disabled                          |
-| `label`    | `string`  | —       | Label text                        |
-| `value`    | `string`  | —       | Radio value sent in `radioChange` |
-| `name`     | `string`  | —       | Group name (HTML radio grouping)  |
-| `idRadio`  | `string`  | —       | HTML `id` for the input element   |
+| Prop       | Type                | Default     | Description                                                           |
+| ---------- | ------------------- | ----------- | --------------------------------------------------------------------- |
+| `idRadio`  | `string`            | `undefined` | HTML `id` for the input — required to link `<label>` via `htmlFor`    |
+| `name`     | `string`            | `undefined` | Group name for HTML radio grouping (also used as native input `value`) |
+| `label`    | `string`            | `undefined` | Label text                                                            |
+| `value`    | `string`            | `undefined` | Component-level value prop — **not passed to the native input**; use `name` to identify the radio in a group |
+| `checked`  | `boolean` (reflect, mutable) | `undefined` | Selected state                                         |
+| `disabled` | `boolean`           | `undefined` | Disabled                                                              |
+| `class`    | `string`            | `undefined` | Extra CSS class on the native `<input>` element                       |
 
-**Events:** `radioChange` — emits the radio `value`.
+> **`radioChange` emits `boolean`, not a value string.** The event emits `isChecked` (`true` when the radio is selected). It does NOT emit the `value` prop. To identify which radio was selected, use the `name` or `value` props in your handler's context.
+
+> **Native input uses `name` as its HTML `value` attribute** (not the `value` prop). This is a quirk of the implementation.
+
+**Events:** `radioChange` — emits `boolean` (`true` when selected).
+
+```tsx
+// React — radio group
+{options.map(opt => (
+  <MsRadio
+    key={opt.id}
+    idRadio={opt.id}
+    name="payment-method"
+    label={opt.label}
+    value={opt.id}
+    checked={selected === opt.id}
+    onRadioChange={() => setSelected(opt.id)}  // use closure, not e.detail
+  />
+))}
+```
 
 ---
 
 #### `ms-control-number`
 
-Number control with + and − buttons. Useful as a compact numeric stepper.
+Integer stepper with + and − buttons. Uses **`shadow: true`** — styles are encapsulated; CSS custom properties do not pierce the shadow DOM.
 
-| Prop           | Type               | Default | Description                           |
-| -------------- | ------------------ | ------- | ------------------------------------- |
-| `label`        | `string`           | `''`    | Label shown above the control         |
-| `value`        | `number \| string` | —       | Current value (mutable, reflected)    |
-| `defaultValue` | `number \| string` | —       | Initial value on mount                |
-| `min`          | `number \| string` | —       | Minimum allowed value                 |
-| `max`          | `number \| string` | —       | Maximum allowed value                 |
-| `disabled`     | `boolean`          | `false` | Disabled state                        |
-| `error`        | `boolean`          | `false` | Visual error state                    |
-| `errorMessage` | `string \| null`   | `null`  | Error message shown below the control |
-| `customClass`  | `string`           | —       | Extra CSS class                       |
+> **Input restriction:** keyboard input accepts only non-negative integers (digits 0–9). Negative values are reachable via the − button only if `min` is negative; you cannot type a minus sign. Empty input falls back to `min` (or `0` if `min` is unset).
+
+| Prop           | Attribute        | Type               | Default | Description                                                              |
+| -------------- | ---------------- | ------------------ | ------- | ------------------------------------------------------------------------ |
+| `label`        | `label`          | `string`           | `''`    | Floating label shown above the control                                   |
+| `value`        | `value`          | `number \| string` | —       | Current value — `mutable + reflect`. Initialized to `defaultValue` or `0` on mount |
+| `defaultValue` | `default-value`  | `number \| string` | —       | Initial value; only used if `value` is not set at mount                  |
+| `min`          | `min`            | `number \| string` | —       | Minimum bound; − button disabled when value equals `min`                 |
+| `max`          | `max`            | `number \| string` | —       | Maximum bound; + button disabled when value equals `max`                 |
+| `disabled`     | `disabled`       | `boolean`          | `false` | Disables both buttons and the input                                      |
+| `error`        | `error`          | `boolean`          | `false` | Renders red error border                                                 |
+| `errorMessage` | `error-message`  | `string \| null`   | `null`  | Error text below — only visible when `error=true`                        |
+| `customClass`  | `custom-class`   | `string`           | —       | Extra CSS class applied to the host wrapper                              |
 
 **Events:**
 
-| Event         | Payload  | Description                     |
-| ------------- | -------- | ------------------------------- |
-| `changeEvent` | `number` | Value changed (after releasing) |
-| `inputEvent`  | `number` | Value changed (on each press)   |
+| Event         | Payload  | Fires when                                                              |
+| ------------- | -------- | ----------------------------------------------------------------------- |
+| `changeEvent` | `number` | On button click, blur, or ArrowUp/Down key (NOT on each keystroke)      |
+| `inputEvent`  | `number` | On every value change, including individual keystrokes while typing     |
+
+```tsx
+// React
+<MsControlNumber
+  label="Cantidad"
+  min={1}
+  max={99}
+  defaultValue={1}
+  onChangeEvent={(e) => setQty(e.detail)}
+/>
+```
 
 ---
 
 #### `ms-knob`
 
-Rotary dial control for selecting numeric values.
+Rotary dial control for selecting numeric values. **`shadow: true`** — CSS is encapsulated. Interaction is **drag-based** (mouse and touch); not click-based.
 
-| Prop            | Type      | Default     | Description                                      |
-| --------------- | --------- | ----------- | ------------------------------------------------ |
-| `value`         | `number`  | `0`         | Current value (mutable)                          |
-| `min`           | `number`  | `0`         | Minimum value                                    |
-| `max`           | `number`  | `100`       | Maximum value                                    |
-| `step`          | `number`  | `1`         | Step increment                                   |
-| `disabled`      | `boolean` | `false`     | Disabled state                                   |
-| `readOnly`      | `boolean` | `false`     | Read-only (no interaction, value displayed)      |
-| `size`          | `number`  | `100`       | Dial diameter in px                              |
-| `strokeWidth`   | `number`  | `14`        | Arc thickness in px                              |
-| `valueTemplate` | `string`  | `'{value}'` | Template for the center label, e.g. `'{value}%'` |
-| `textColor`     | `string`  | —           | Color of the center value text                   |
-| `rangeColor`    | `string`  | —           | Active arc fill color                            |
-| `valueColor`    | `string`  | —           | Track (inactive arc) color                       |
+| Prop            | Type      | Default     | Description                                                 |
+| --------------- | --------- | ----------- | ----------------------------------------------------------- |
+| `value`         | `number`  | `0`         | Current value (mutable)                                     |
+| `min`           | `number`  | `0`         | Minimum value                                               |
+| `max`           | `number`  | `100`       | Maximum value                                               |
+| `step`          | `number`  | `1`         | Step increment                                              |
+| `disabled`      | `boolean` | `false`     | Disabled — no interaction                                   |
+| `readOnly`      | `boolean` | `false`     | Read-only — value displayed, no interaction                 |
+| `size`          | `number`  | `100`       | Dial diameter in px                                         |
+| `strokeWidth`   | `number`  | `14`        | Arc thickness in px                                         |
+| `valueTemplate` | `string`  | `'{value}'` | Template for center label — `{value}` is replaced at render |
+| `textColor`     | `string`  | `undefined` | Color of the center value text                              |
+| `rangeColor`    | `string`  | `undefined` | Color of the **background track arc** (inactive portion)    |
+| `valueColor`    | `string`  | `undefined` | Color of the **progress arc** (filled/value portion)        |
 
-> **Note:** there is no `showValue` prop. The value is always shown in the center using `valueTemplate`.
+> Arc geometry is fixed: **270° arc**, starts at **135°** — not configurable.
 
-**Events:** `changeValue` — emits `number` with the new value.
+> `changeValue` only emits when the value actually changes (`newValue !== this.value`).
+
+> **`shadow: true`** — `rangeColor`, `valueColor`, `textColor` are the only way to customize colors from outside. Host classes `ms-knob--disabled` and `ms-knob--readonly` are available for external CSS targeting.
+
+**Events:**
+
+| Event         | Payload  | Description                                       |
+| ------------- | -------- | ------------------------------------------------- |
+| `changeValue` | `number` | New value on drag — only emits when value changes |
 
 ```tsx
 // React
@@ -858,6 +1049,8 @@ Rotary dial control for selecting numeric values.
   min={0}
   max={100}
   valueTemplate="{value}%"
+  rangeColor="#e0e0e0"
+  valueColor="#4f46e5"
   onChangeValue={(e) => setVolume(e.detail)}
 />
 ```
@@ -866,19 +1059,56 @@ Rotary dial control for selecting numeric values.
 
 #### `ms-input-group`
 
-Groups multiple inputs in a single row with flexible layout.
+**CSS-only utility — not a web component.** Groups inputs with addons (text, icons, buttons, selects) in a single flex row using two CSS classes: `.ms-input-group` (container) and `.ms-input-group-addon` (non-input cell).
 
-| Prop    | Type     | Default | Description         |
-| ------- | -------- | ------- | ------------------- |
-| `label` | `string` | —       | General group label |
+> Never use `<ms-input-group>` as a tag — it doesn't exist. Use a plain `<div class="ms-input-group">`.
 
-**Slots:** default slot to include child inputs.
+**CSS classes:**
+
+| Class                  | Element | Description                                                   |
+| ---------------------- | ------- | ------------------------------------------------------------- |
+| `.ms-input-group`      | `div`   | Flex row container. Adapts to 100% width of its parent.       |
+| `.ms-input-group-addon`| `span`  | Non-input cell (text, SVG, `ms-checkbox`, `ms-input-switch`). |
+
+**Compatible children (inside `.ms-input-group` directly, no addon wrapper):**
+`ms-input-field`, `ms-input-number`, `ms-button`, `ms-dropdown`, `ms-autocomplete`, `ms-select-button`, `ms-chips`, `ms-calendar`, `ms-control-number`
+
+**Rules:**
+- `ms-button` placed directly in the group integrates flush (no border-radius gap).
+- There is **no global `disabled`** on the group — disable each child individually.
+- Multiple consecutive `.ms-input-group-addon` spans are valid (icon + label).
+- Multiple input children in the same group are valid (e.g. First name / Last name).
 
 ```html
-<ms-input-group label="Full name">
+<!-- Text addon -->
+<div class="ms-input-group">
+  <span class="ms-input-group-addon">@</span>
+  <ms-input-field placeholder="Username"></ms-input-field>
+</div>
+
+<!-- Input + button -->
+<div class="ms-input-group">
+  <ms-input-field placeholder="Search..."></ms-input-field>
+  <ms-button>Search</ms-button>
+</div>
+
+<!-- Dropdown prefix + input -->
+<div class="ms-input-group">
+  <ms-dropdown style="width:150px" placeholder="+1"></ms-dropdown>
+  <ms-input-field placeholder="(555) 000-0000"></ms-input-field>
+</div>
+
+<!-- Two inputs side by side -->
+<div class="ms-input-group">
   <ms-input-field placeholder="First name"></ms-input-field>
   <ms-input-field placeholder="Last name"></ms-input-field>
-</ms-input-group>
+</div>
+
+<!-- Checkbox as addon -->
+<div class="ms-input-group">
+  <span class="ms-input-group-addon"><ms-checkbox></ms-checkbox></span>
+  <ms-input-field placeholder="I accept the terms"></ms-input-field>
+</div>
 ```
 
 ---
@@ -889,30 +1119,57 @@ Groups multiple inputs in a single row with flexible layout.
 
 #### `ms-dropdown`
 
-Select/dropdown with floating label, optional search and group support.
+Select/dropdown with floating label, optional search, and group support. `shadow: false`.
 
-| Prop           | Type                       | Default | Description                          |
-| -------------- | -------------------------- | ------- | ------------------------------------ |
-| `idComponent`  | `string`                   | —       | HTML `id`                            |
-| `label`        | `string`                   | —       | Floating label                       |
-| `placeholder`  | `string`                   | —       | Placeholder when nothing is selected |
-| `options`      | `Item[] \| GroupItem[]`    | `[]`    | Available options                    |
-| `value`        | `string \| number \| null` | `null`  | Selected value                       |
-| `filter`       | `boolean`                  | `false` | Enable search within options         |
-| `optionGroup`  | `boolean`                  | `false` | Render as groups                     |
-| `disabled`     | `boolean`                  | `false` | Disabled                             |
-| `required`     | `boolean`                  | `false` | Required                             |
-| `invalid`      | `boolean`                  | `false` | Error state                          |
-| `errorMessage` | `string`                   | —       | Error message                        |
+| Prop           | Attribute        | Type                       | Default           | Description                                     |
+| -------------- | ---------------- | -------------------------- | ----------------- | ----------------------------------------------- |
+| `options`      | **JS only**      | `Item[] \| GroupItem[]`    | `[]`              | Available options — must be set as JS property  |
+| `value`        | `value`          | `string \| number \| null` | `null`            | Selected value (mutable)                        |
+| `label`        | `label`          | `string \| null`           | `null`            | Floating label                                  |
+| `placeholder`  | `placeholder`    | `string`                   | `'Select option'` | Placeholder when nothing is selected            |
+| `filter`       | `filter`         | `boolean`                  | `false`           | Enable search within options                    |
+| `optionGroup`  | `option-group`   | `boolean`                  | `false`           | Treat `options` as `GroupItem[]`                |
+| `disabled`     | `disabled`       | `boolean`                  | `false`           | Disabled (mutable)                              |
+| `required`     | `required`       | `boolean`                  | `false`           | Required — validates on selection change        |
+| `invalid`      | `invalid`        | `boolean`                  | `false`           | Force error state from outside                  |
+| `errorMessage` | `error-message`  | `string \| null`           | `null`            | Error text — shown when `invalid=true` or `required` fails |
+| `class`        | `class`          | `string \| null`           | `null`            | Extra CSS class on the dropdown box             |
+| `idComponent`  | `id-component`   | `string \| null`           | `'ms-dropdown'`   | `id` used for label linkage and `validationChange.fieldId` |
+
+**Interfaces:**
+
+```ts
+interface Item {
+  label: string;
+  value: number | string;
+  icon?: string;      // URL to <img> displayed before label
+  disabled?: boolean;
+  tooltip?: string;
+}
+
+interface GroupItem extends Item {
+  items: Item[];      // child items when optionGroup=true
+  // GroupItem.value is inherited but ignored during selection
+}
+
+interface ValidationDetail {
+  isValid: boolean;
+  fieldId: string;    // matches idComponent
+  value: any;
+  errorMessage: string;
+}
+```
 
 **Events:**
 
-| Event              | Payload            | Description      |
-| ------------------ | ------------------ | ---------------- |
-| `selected`         | `Item`             | Item selected    |
-| `validationChange` | `ValidationDetail` | Validation state |
+| Event              | Payload            | Description                                                        |
+| ------------------ | ------------------ | ------------------------------------------------------------------ |
+| `selected`         | `Item`             | Full `Item` object of the selected option (not just the value)     |
+| `validationChange` | `ValidationDetail` | Fires on selection, `required` toggle, and `invalid` prop change   |
 
-**Behavior:** the dropdown auto-detects whether there is space below or above and positions the option panel accordingly.
+**Behavior:** auto-positions the option panel above or below based on available viewport space.
+
+> When `required=true` and the field is empty, the component auto-validates and shows `'This field is required'` — no need to set `invalid` manually.
 
 ```tsx
 // React
@@ -928,50 +1185,70 @@ const options = [
   value={selectedCountry}
   filter
   onSelected={(e) => setSelectedCountry(e.detail.value)}
-/>;
+/>
 ```
 
-```html
-<!-- Angular template -->
-<ms-dropdown
-  label="Country"
-  [options]="options"
-  [value]="selectedCountry"
-  [filter]="true"
-  (selected)="onSelected($event)"
-></ms-dropdown>
+```tsx
+// React — grouped options (optionGroup must be true)
+const grouped = [
+  { label: "North America", value: "na", items: [
+    { label: "United States", value: "US" },
+    { label: "Mexico", value: "MX" },
+  ]},
+  { label: "South America", value: "sa", items: [
+    { label: "Colombia", value: "CO" },
+  ]},
+];
+
+<MsDropdown
+  label="Region"
+  options={grouped}
+  optionGroup
+  onSelected={(e) => setRegion(e.detail.value)}
+/>
 ```
 
 ---
 
 #### `ms-multiselect`
 
-Multi-select with search, select-all and groups.
+Multi-select with search, select-all and groups. `shadow: false` — external CSS penetrates.
 
-| Prop            | Type                    | Default   | Description                                         |
-| --------------- | ----------------------- | --------- | --------------------------------------------------- |
-| `idComponent`   | `string`                | —         | HTML `id`                                           |
-| `label`         | `string`                | —         | Floating label                                      |
-| `placeholder`   | `string`                | —         | Placeholder                                         |
-| `options`       | `Item[] \| GroupItem[]` | `[]`      | Available options                                   |
-| `value`         | `Item[]`                | `[]`      | Selected items                                      |
-| `showFilter`    | `boolean`               | `false`   | Show search input                                   |
-| `optionGroup`   | `boolean`               | `false`   | Grouped options                                     |
-| `display`       | `'comma' \| number`     | `'comma'` | `'comma'` shows labels; a number shows "N selected" |
-| `showSelectAll` | `boolean`               | `false`   | "Select all" option                                 |
-| `disabled`      | `boolean`               | `false`   | Disabled                                            |
-| `required`      | `boolean`               | `false`   | Required                                            |
-| `invalid`       | `boolean`               | `false`   | Visual error                                        |
+| Prop                  | Type                         | Default              | Description                                              |
+| --------------------- | ---------------------------- | -------------------- | -------------------------------------------------------- |
+| `idComponent`         | `string \| null`             | `'ms-multiselect'`   | HTML `id`                                                |
+| `label`               | `string \| null`             | `null`               | Floating label. When `null`, renders without label mode  |
+| `placeholder`         | `string`                     | `'Select an item'`   | Placeholder text                                         |
+| `options`             | `Item[] \| GroupItem[]`      | `[]`                 | Available options — **JS-only** (array can't be set via HTML attribute) |
+| `value`               | `Item[] \| GroupItem[]`      | `undefined`          | Selected items — **JS-only**                             |
+| `display`             | `'comma' \| 'chip'`          | `'comma'`            | `'comma'` joins labels with ", "; `'chip'` renders removable `ms-chips` |
+| `showFilter`          | `boolean`                    | `false`              | Show search input inside dropdown                        |
+| `showSelectAll`       | `boolean`                    | `true`               | Show "Select all" checkbox                               |
+| `selectAllOptionText` | `string`                     | `''`                 | Label for the "Select all" checkbox (empty = no label)   |
+| `optionGroup`         | `boolean`                    | `false`              | Group mode — `options` must be `GroupItem[]`             |
+| `class`               | `string \| null`             | `null`               | Extra CSS class on the trigger box element               |
+| `disabled`            | `boolean`                    | `false`              | Disabled                                                 |
+| `required`            | `boolean` (mutable)          | `false`              | Required — validated on selection change                 |
+| `invalid`             | `boolean`                    | `false`              | Visual error state                                       |
+| `errorMessage`        | `string \| null`             | `null`               | Error message shown when `invalid=true`                  |
+
+> **"N items selected"** — when more than 3 items are selected the trigger shows `"N items selected"` regardless of the `display` value. This is automatic, not configurable.
+
+> **Validation:** `errorMessage` only shown when `invalid=true`. When `required` fails, shows hardcoded `"This field is required"`.
+
+> **`display='chip'`** — uses `ms-chips` internally. Chips are removable by the user. Does **not** work correctly with `optionGroup=true`.
+
+> **Dropdown position** — menu is rendered `position: fixed` at `zIndex: 9999`. Auto-flips above trigger if there is no space below.
 
 **Events:**
 
-| Event              | Payload            | Description             |
-| ------------------ | ------------------ | ----------------------- |
-| `selected`         | `Item[]`           | Array of selected items |
-| `selectAll`        | `Item[]`           | All items selected      |
-| `hide`             | `void`             | Options panel closed    |
-| `filter`           | `string`           | Search text entered     |
-| `validationChange` | `ValidationDetail` | Validation state        |
+| Event              | Payload            | Description                                                  |
+| ------------------ | ------------------ | ------------------------------------------------------------ |
+| `selected`         | `Item[]`           | Current selected items after any change (item toggle or select-all) |
+| `selectAll`        | `Item[]`           | Items selected/deselected via "Select all" checkbox          |
+| `hide`             | `boolean`          | Emits `false` when dropdown closes (always `false`)          |
+| `filter`           | `string`           | Search text as user types in the filter input                |
+| `validationChange` | `ValidationDetail` | `{ isValid, fieldId, value, errorMessage }` — emits on selection change when `required=true` or `invalid` changes |
 
 ```tsx
 // React
@@ -981,8 +1258,8 @@ Multi-select with search, select-all and groups.
   value={selectedPermissions}
   showFilter
   showSelectAll
-  display={3}
   onSelected={(e) => setPermissions(e.detail)}
+  onValidationChange={(e) => setValid(e.detail.isValid)}
 />
 ```
 
@@ -992,45 +1269,82 @@ Multi-select with search, select-all and groups.
 
 Text field with dynamic suggestions (typeahead).
 
-| Prop          | Type                       | Default | Description            |
-| ------------- | -------------------------- | ------- | ---------------------- |
-| `idComponent` | `string`                   | —       | HTML `id`              |
-| `label`       | `string`                   | —       | Floating label         |
-| `placeholder` | `string`                   | —       | Placeholder            |
-| `value`       | `string \| number \| null` | `null`  | Current value          |
-| `suggestions` | `{label, value}[]`         | `[]`    | Suggestions to display |
-| `optionGroup` | `boolean`                  | `false` | Grouped suggestions    |
-| `showIcon`    | `boolean`                  | `false` | Show search icon       |
-| `disabled`    | `boolean`                  | `false` | Disabled               |
-| `required`    | `boolean`                  | `false` | Required               |
-| `invalid`     | `boolean`                  | `false` | Visual error           |
+| Prop           | Type                       | Default               | Description                                              |
+| -------------- | -------------------------- | --------------------- | -------------------------------------------------------- |
+| `idComponent`  | `string`                   | `'ms-autocomplete'`   | HTML `id` for the input                                  |
+| `label`        | `string \| null`           | `null`                | Floating label. When `null`, renders without floating label |
+| `placeholder`  | `string`                   | `'Type to search...'` | Placeholder text                                         |
+| `value`        | `string \| number \| null` | `null`                | Current selected value (pre-fills the input text)        |
+| `class`        | `string \| null`           | `null`                | Extra CSS class on the input element                     |
+| `showIcon`     | `boolean`                  | `false`               | Show search icon inside the input                        |
+| `optionGroup`  | `boolean`                  | `false`               | Grouped suggestions — pass `GroupItem[]` via `resolve`   |
+| `disabled`     | `boolean`                  | `false`               | Disabled                                                 |
+| `required`     | `boolean`                  | `false`               | Required field                                           |
+| `invalid`      | `boolean`                  | `false`               | Visual error state                                       |
+| `errorMessage` | `string \| null`           | `null`                | Error message shown below the input when invalid         |
+| `suggestions`  | `{ label, value }[]`       | `[]`                  | Declared prop but **NOT used for display** — pass results via `resolve` (see below) |
 
 **Events:**
 
-| Event              | Payload            | Description                                    |
-| ------------------ | ------------------ | ---------------------------------------------- |
-| `completeMethod`   | `string`           | User types — use it to filter/load suggestions |
-| `selected`         | `Item`             | Item selected from suggestions                 |
-| `validationChange` | `ValidationDetail` | Validation state                               |
+| Event              | Payload                                                                              | Description                                       |
+| ------------------ | ------------------------------------------------------------------------------------ | ------------------------------------------------- |
+| `completeMethod`   | `{ query: string; resolve: (results: { label: string; value: string }[]) => void }` | User typed — **must call `e.detail.resolve(results)`** to populate dropdown |
+| `selected`         | `{ label: string; value: string }`                                                   | Item selected from the dropdown                   |
+| `validationChange` | `ValidationDetail`                                                                   | Validation state changed                          |
 
-**Usage pattern (remote search):**
+> **`completeMethod` usa un callback Promise-based.** El componente espera `e.detail.resolve(results)` para mostrar las sugerencias. Llamar `setSuggestions()` o cualquier setState externo **no tiene efecto** — el prop `suggestions` no está conectado a la lista del dropdown.
+
+**Item shape:**
+
+```typescript
+// Flat item
+{ label: string; value: string; icon?: string }  // icon = URL, renders as 24px image
+
+// Grouped item (optionGroup=true)
+{ label: string; icon?: string; items: { label: string; value: string }[] }
+```
+
+**Keyboard navigation:** `↑ ↓` navigate · `Enter` select · `Esc` close
 
 ```tsx
-// React
-const [suggestions, setSuggestions] = useState([]);
-
-async function onSearch(e) {
-  const query = e.detail;
-  const results = await api.searchUsers(query);
-  setSuggestions(results.map((u) => ({ label: u.name, value: u.id })));
-}
-
+// React — correct pattern: resolve callback
 <MsAutocomplete
   label="Search user"
-  suggestions={suggestions}
-  onCompleteMethod={onSearch}
-  onSelected={(e) => console.log("Selected:", e.detail)}
-/>;
+  showIcon
+  required
+  errorMessage="Select a user"
+  onCompleteMethod={async (e) => {
+    const { query, resolve } = e.detail;
+    const results = await api.searchUsers(query);
+    resolve(results.map(u => ({ label: u.name, value: u.id })));
+  }}
+  onSelected={(e) => setUser(e.detail)}
+  onValidationChange={(e) => setValid(e.detail.isValid)}
+/>
+
+// ❌ INCORRECTO — setSuggestions no tiene efecto, el componente ignora el prop suggestions
+const [suggestions, setSuggestions] = useState([]);
+<MsAutocomplete
+  suggestions={suggestions}  // no conectado al dropdown
+  onCompleteMethod={async (e) => {
+    const results = await api.search(e.detail); // e.detail es { query, resolve }, no un string
+    setSuggestions(results);  // no actualiza el dropdown
+  }}
+/>
+
+// React — grouped mode
+<MsAutocomplete
+  label="Search location"
+  optionGroup
+  onCompleteMethod={async (e) => {
+    const { resolve } = e.detail;
+    resolve([
+      { label: 'USA', items: [{ label: 'New York', value: 'ny' }] },
+      { label: 'Mexico', items: [{ label: 'CDMX', value: 'mx' }] },
+    ]);
+  }}
+  onSelected={(e) => console.log(e.detail)}
+/>
 ```
 
 ---
@@ -1039,60 +1353,118 @@ async function onSearch(e) {
 
 Tag/chip input with optional autocomplete.
 
-| Prop          | Type                   | Default     | Description                            |
-| ------------- | ---------------------- | ----------- | -------------------------------------- |
-| `value`       | `string[]`             | `[]`        | Current chips                          |
-| `suggestions` | `string[]`             | `[]`        | Autocomplete suggestions               |
-| `placeholder` | `string`               | —           | Input placeholder                      |
-| `max`         | `number`               | —           | Maximum chips allowed                  |
-| `removable`   | `boolean`              | `true`      | Show remove button on each chip        |
-| `disabled`    | `boolean`              | `false`     | Disabled                               |
-| `invalid`     | `boolean`              | `false`     | Visual error                           |
-| `separator`   | `'default' \| 'comma'` | `'default'` | `'default'` = Enter; `'comma'` = comma |
-| `variant`     | `'outlined' \| string` | —           | Visual variant                         |
+| Prop          | Attribute     | Type                    | Default     | Description                                                           |
+| ------------- | ------------- | ----------------------- | ----------- | --------------------------------------------------------------------- |
+| `value`       | **JS only**   | `string[]`              | `undefined` | Initial chips array — must be a JS prop                               |
+| `suggestions` | **JS only**   | `string[]`              | `undefined` | Autocomplete suggestions — must be a JS prop. Presence switches mode  |
+| `placeholder` | `placeholder` | `string`                | `undefined` | Input placeholder (hidden once chips exist)                           |
+| `max`         | `max`         | `number`                | `undefined` | Maximum chips — input is disabled once reached                        |
+| `removable`   | `removable`   | `boolean`               | `true`      | Show × button on each chip; Backspace also removes last chip          |
+| `disabled`    | `disabled`    | `boolean`               | `false`     | Disabled                                                              |
+| `invalid`     | `invalid`     | `boolean`               | `false`     | Visual error state                                                    |
+| `separator`   | `separator`   | `'default' \| ','`      | `'default'` | `'default'` = Enter adds chip; `','` = comma adds chip               |
+| `variant`     | `variant`     | `'outlined' \| 'filled'`| `'outlined'`| Visual variant                                                        |
+| `class`       | `class`       | `string`                | `undefined` | Extra CSS class on the outer container                                |
 
-**Events:** `changeEvent` — emits `string[]` with all current chips.
+> **`separator` value:** the comma mode uses the literal string `","` (not `"comma"`). Pass `separator=","`.
 
-**Keyboard navigation:**
+**Events:** `changeEvent` — emits `string[]` with all current chips after any add/remove.
 
-- `Enter` or `,` (depending on `separator`) — adds chip
-- `Backspace` — removes last chip
-- `↑ ↓` — navigate suggestions
-- `Esc` — close suggestions
+**Two operating modes (based on `suggestions` prop):**
+
+- **Free entry** (`suggestions` not set): Enter or `,` (per `separator`) adds the typed text as a chip directly.
+- **Autocomplete** (`suggestions` is an array): shows a dropdown filtered by input; Enter/click selects from the list. Input is cleared on blur, already-added items are excluded from suggestions.
+
+**Keyboard (autocomplete mode):**
+
+- `↓ / ↑` — navigate dropdown
+- `Enter` — select highlighted suggestion
+- `Backspace` on empty input — removes last chip
+- `Escape` — close dropdown
 
 ```tsx
-// React
-const [tags, setTags] = useState(["javascript", "typescript"]);
-
+// React — free entry
 <MsChips
   value={tags}
-  suggestions={["react", "angular", "vue", "stencil"]}
+  placeholder="Add tag"
+  onChangeEvent={(e) => setTags(e.detail)} // e.detail = string[]
+/>
+
+// React — autocomplete mode
+<MsChips
+  value={selected}
+  suggestions={["React", "Angular", "Vue", "Stencil"]}
   placeholder="Add technology"
-  separator="comma"
-  onChangeEvent={(e) => setTags(e.detail)}
-/>;
+  max={5}
+  onChangeEvent={(e) => setSelected(e.detail)}
+/>
+
+// Comma separator (note: literal "," not "comma")
+<MsChips value={tags} separator="," onChangeEvent={(e) => setTags(e.detail)} />
 ```
 
 ---
 
 #### `ms-select-button`
 
-Segmented control-style selection buttons. Single or multiple selection.
+Segmented control-style selection buttons. Single or multiple selection. `shadow: false` — external CSS penetrates.
 
-| Prop       | Type           | Default | Description              |
-| ---------- | -------------- | ------- | ------------------------ |
-| `options`  | `Item[]`       | `[]`    | Available options        |
-| `value`    | `any \| any[]` | —       | Selected value(s)        |
-| `multiple` | `boolean`      | `false` | Allow multiple selection |
-| `disabled` | `boolean`      | `false` | Disabled                 |
+| Prop              | Type                    | Default              | Description                                                                 |
+| ----------------- | ----------------------- | -------------------- | --------------------------------------------------------------------------- |
+| `options`         | `Item[] \| string[]`    | `[]`                 | Available options. `string[]` is auto-normalized to `{label, value}[]`      |
+| `value`           | `any` (mutable)         | `null`               | Selected value (single) or `any[]` (multiple)                               |
+| `multiple`        | `boolean`               | `false`              | Allow multiple selection                                                    |
+| `label`           | `string \| null`        | `null`               | Label above the button group                                                |
+| `tooltip`         | `string \| null`        | `null`               | Tooltip on the entire group (wraps in `ms-tooltip`)                         |
+| `tooltipPosition` | `'top' \| 'bottom' \| 'left' \| 'right'` | `'top'` | Position for both group and per-item tooltips            |
+| `disabled`        | `boolean`               | `false`              | Disables all buttons                                                        |
+| `required`        | `boolean`               | `false`              | Required — validated on change                                              |
+| `invalid`         | `boolean`               | `false`              | Visual error state                                                          |
+| `errorMessage`    | `string \| null`        | `null`               | Error message shown when `invalid=true`                                     |
+| `idComponent`     | `string \| null`        | `'ms-select-button'` | HTML `id`                                                                   |
+| `class`           | `string \| null`        | `null`               | Extra CSS class on the wrapper element                                      |
 
-**Events:** `changeEvent` — emits the selected value or array.
+> **Event name is `changeValue`, not `changeEvent`.**
 
-```html
-<ms-select-button
-  options='[{"label":"List","value":"list"},{"label":"Grid","value":"grid"}]'
-  value="list"
-></ms-select-button>
+> **`changeValue` payload differs by mode:**
+> - Single mode → emits the selected **value** (primitive), or `null` when deselected
+> - Multiple mode → emits **`Item[]`** (full objects of selected items)
+
+> **Single mode toggles:** clicking the already-selected button deselects it (emits `null`).
+
+> **Validation:** `errorMessage` shown only when `invalid=true`. `required` failure → `"This field is required"`.
+
+> **Per-item tooltip:** if an `Item` has a `tooltip` property, that item is individually wrapped in `ms-tooltip`.
+
+**Keyboard navigation:** `←`/`↑` focus previous · `→`/`↓` focus next · `Home` first · `End` last.
+
+**Events:**
+
+| Event              | Payload                        | Description                              |
+| ------------------ | ------------------------------ | ---------------------------------------- |
+| `changeValue`      | `any` (single) \| `Item[]` (multiple) | Selection changed                 |
+| `validationChange` | `ValidationDetail`             | `{ isValid, fieldId, value, errorMessage }` |
+
+**Slots:** `item-{value}` — custom content for a specific button (e.g. icon + label).
+
+```tsx
+// React — single mode (view toggle)
+<MsSelectButton
+  options={[
+    { label: "List", value: "list" },
+    { label: "Grid", value: "grid" },
+  ]}
+  value={viewMode}
+  onChangeValue={(e) => setViewMode(e.detail)}
+/>
+
+// React — multiple mode
+<MsSelectButton
+  options={["Mon", "Tue", "Wed", "Thu", "Fri"]}
+  multiple
+  value={selectedDays}
+  onChangeValue={(e) => setSelectedDays(e.detail.map(i => i.value))}
+/>
 ```
 
 ---
@@ -1105,13 +1477,13 @@ Segmented control-style selection buttons. Single or multiple selection.
 
 Collapsible sections accordion.
 
-| Prop           | Type                 | Default | Description                            |
-| -------------- | -------------------- | ------- | -------------------------------------- |
-| `activeIndex`  | `number \| number[]` | —       | Index(es) of initially open section(s) |
-| `multiple`     | `boolean`            | `false` | Allow multiple open sections           |
-| `disabled`     | `number[]`           | `[]`    | Disabled section indexes               |
-| `headerClass`  | `string`             | —       | Extra CSS class for headers            |
-| `contentClass` | `string`             | —       | Extra CSS class for content            |
+| Prop           | Type                 | Default | Description                                              |
+| -------------- | -------------------- | ------- | -------------------------------------------------------- |
+| `activeIndex`  | `number \| number[]` | `-1`    | Index(es) of initially open section(s). `-1` = all closed |
+| `multiple`     | `boolean`            | `false` | Allow multiple open sections simultaneously              |
+| `disabled`     | `number[]`           | `[]`    | Indexes of disabled sections — **JS prop only, not HTML attribute** |
+| `headerClass`  | `string`             | `''`    | Extra CSS class applied to every header button           |
+| `contentClass` | `string`             | `''`    | Extra CSS class applied to every content panel           |
 
 **Events:**
 
@@ -1126,8 +1498,13 @@ Collapsible sections accordion.
 - `header-{n}` — header content for section n (zero-based)
 - `content-{n}` — body content for section n
 
+> **No `ms-accordion-tab` child component.** The accordion detects sections by counting `header-*` slots in the DOM. Use named slots `header-{n}` / `content-{n}` directly.
+
+> **`disabled` must be a JS prop.** It is not reflected to an HTML attribute. Pass it as a property: `disabled={[1, 3]}` in React, `.disabled="${[1, 3]}"` in lit-html. Setting it as a string attribute has no effect.
+
 ```html
-<ms-accordion multiple>
+<!-- Vanilla — all sections closed by default (activeIndex defaults to -1) -->
+<ms-accordion>
   <span slot="header-0">Section 1</span>
   <div slot="content-0">Content of the first section</div>
 
@@ -1136,21 +1513,43 @@ Collapsible sections accordion.
 </ms-accordion>
 ```
 
+```tsx
+// React — open section 0 on load
+<MsAccordion activeIndex={0} onTabChange={(e) => console.log(e.detail)}>
+  <span slot="header-0">Section 1</span>
+  <div slot="content-0">Content of the first section</div>
+  <span slot="header-1">Section 2</span>
+  <div slot="content-1">Content of the second section</div>
+</MsAccordion>
+
+// React — multiple mode, sections 0 and 2 open, section 1 disabled
+<MsAccordion multiple activeIndex={[0, 2]} disabled={[1]}>
+  <span slot="header-0">Section 1</span>
+  <div slot="content-0">Content 1</div>
+  <span slot="header-1">Section 2 (disabled)</span>
+  <div slot="content-1">Content 2</div>
+  <span slot="header-2">Section 3</span>
+  <div slot="content-2">Content 3</div>
+</MsAccordion>
+```
+
 ---
 
 #### `ms-tabs`
 
-Tab interface.
+Tab interface. `shadow: false` — external CSS penetrates.
 
-| Prop           | Type                       | Default     | Description                             |
-| -------------- | -------------------------- | ----------- | --------------------------------------- |
-| `activeTab`    | `number`                   | `0`         | Index of the active tab (zero-based)    |
-| `hierarchy`    | `'Primary' \| 'Secondary'` | `'Primary'` | Visual variant of the tab bar           |
-| `disabledTabs` | `number[]`                 | `[]`        | Indexes of tabs that cannot be selected |
+| Prop           | Type                                        | Default     | Description                                       |
+| -------------- | ------------------------------------------- | ----------- | ------------------------------------------------- |
+| `activeTab`    | `number` (mutable)                          | `0`         | Index of the active tab (zero-based)              |
+| `hierarchy`    | `'primary' \| 'secondary' \| 'tertiary'`   | `'primary'` | Visual variant of the tab bar                     |
+| `disabledTabs` | `number[]`                                  | `[]`        | Indexes of disabled tabs — **JS-only, not HTML attribute** |
+
+> **Tab list is read once at `componentWillLoad`.** Dynamically adding or removing child elements after mount will not update the tab buttons or panels.
 
 **Events:** `tabChange` — emits `{ index: number }`.
 
-**Child element attributes** (set on direct children to define each tab):
+**Child element attributes** (set on direct children — read at load time to build tab buttons):
 
 | Attribute   | Description                                    |
 | ----------- | ---------------------------------------------- |
@@ -1158,7 +1557,7 @@ Tab interface.
 | `iconLeft`  | URL of an icon shown to the left of the label  |
 | `iconRight` | URL of an icon shown to the right of the label |
 
-**Slots:** `tab-{n}` — content panel for tab n (zero-based).
+**Slots:** `tab-{n}` — content panel for tab n (zero-based). The same child element provides both the `label` attribute (for the header button) and `slot="tab-n"` (for its content).
 
 ```html
 <!-- Vanilla -->
@@ -1193,41 +1592,94 @@ Tab interface.
 
 Breadcrumb navigation.
 
-| Prop    | Type     | Default | Description                                       |
-| ------- | -------- | ------- | ------------------------------------------------- |
-| `model` | `Item[]` | `[]`    | Route steps. Each item: `{ label, value, icon? }` |
-| `home`  | `Item`   | —       | Root element (usually home)                       |
+| Prop            | Type               | Default                  | Description                                       |
+| --------------- | ------------------ | ------------------------ | ------------------------------------------------- |
+| `home`          | `BreadcrumbItem`   | `null`                   | Home item — **JS prop only, not HTML attribute**  |
+| `model`         | `BreadcrumbItem[]` | `[]`                     | Route items — **JS prop only, not HTML attribute** |
+| `separatorIcon` | `IconName`         | `'breadcrumb-separator'` | Icon between items (any icon from the registry)   |
+| `idPrefix`      | `string`           | `'ms-breadcrumb'`        | Prefix for generated item IDs                     |
+| `customClass`   | `string`           | `''`                     | Extra CSS class on the `<nav>` element            |
 
-**Events:** `itemClick` — emits the clicked item.
+**No events.** Clicks are handled via `item.command()` on each `BreadcrumbItem`.
 
-```html
-<ms-breadcrumb
-  home='{"label":"Home","value":"/"}'
-  model='[{"label":"Users","value":"/users"},{"label":"Profile","value":"/users/1"}]'
-></ms-breadcrumb>
+**`BreadcrumbItem` interface:**
+
+```typescript
+interface BreadcrumbItem {
+  id?: string;        // explicit element id
+  label?: string;     // display text
+  icon?: IconName;    // icon from the registry (e.g. 'home', 'search')
+  url?: string;       // navigation link; omit for non-navigable items
+  target?: string;    // link target ('_blank', etc.)
+  disabled?: boolean; // disables click and applies disabled style
+  hidden?: boolean;   // removes item from the rendered breadcrumb
+  slotName?: string;  // named slot to inject custom content for this item
+  template?: string | ((item, options) => string);  // HTML string or function
+  command?(event: { originalEvent: Event; item: BreadcrumbItem }): void;  // click callback
+}
+```
+
+> **`home` and `model` must be set as JS properties**, not HTML attributes. The component ignores string attributes for these props.
+
+> **Slots:** use `slotName` on the item + a matching `slot="..."` child element for fully custom item content.
+> - Home item: `slotName: 'home'` → `<span slot="home">...</span>`
+> - Model items: `slotName: 'my-slot'` → `<span slot="my-slot">...</span>` (or auto `link-{n}` if omitted)
+
+```tsx
+// React — set props via ref
+import { useRef, useEffect } from 'react';
+
+function AppBreadcrumb({ section, page }) {
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!ref.current) return;
+    ref.current.home = { icon: 'home', command: () => navigate('/') };
+    ref.current.model = [
+      { label: section, url: `/${section}` },
+      { label: page, disabled: true },
+    ];
+  }, [section, page]);
+
+  return <ms-breadcrumb ref={ref} />;
+}
+
+// React — with hidden items and custom click handler
+ref.current.model = [
+  { label: 'Users', url: '/users' },
+  { label: 'Reports', hidden: true },       // excluded from render
+  { label: 'Profile', disabled: true },     // shown but not clickable
+  {
+    label: 'Settings',
+    command: ({ originalEvent, item }) => {
+      originalEvent.preventDefault();
+      navigate(item.url);
+    },
+  },
+];
 ```
 
 ---
 
 #### `ms-navbar`
 
-Collapsible lateral navigation sidebar with nested menus, accordion behavior and programmatic control.
+Collapsible lateral navigation sidebar with nested menus, accordion behavior and programmatic control. `shadow: false` — external CSS penetrates. This is a **full page layout component** — the default slot is the main content area that sits next to the sidebar.
 
 | Prop               | Type                     | Default | Description                                      |
 | ------------------ | ------------------------ | ------- | ------------------------------------------------ |
-| `items`            | `NavbarItem[] \| string` | `[]`    | Navigation items (array or JSON string)          |
-| `activeItemId`     | `string`                 | —       | ID of the currently active item (highlighted)    |
+| `items`            | `NavbarItem[] \| string` | `[]`    | Navigation items (JS array or JSON string)       |
+| `activeItemId`     | `string` (mutable)       | `''`    | ID of the currently active item (highlighted); reactive via `@Watch` |
 | `defaultCollapsed` | `boolean`                | `true`  | Start the sidebar collapsed                      |
-| `showToggleButton` | `boolean`                | `false` | Show a built-in toggle button inside the sidebar |
-| `accordion`        | `boolean`                | `true`  | Auto-close other submenus when one opens         |
-| `customClass`      | `string`                 | —       | Extra CSS class on the host element              |
+| `showToggleButton` | `boolean`                | `false` | Show a built-in toggle chevron button at the bottom of the sidebar |
+| `accordion`        | `boolean`                | `true`  | Auto-close sibling submenus when one opens       |
+| `customClass`      | `string`                 | `''`    | Extra CSS class on the host element              |
 
 **Events:**
 
-| Event           | Payload   | Description                          |
-| --------------- | --------- | ------------------------------------ |
-| `sidebarToggle` | `boolean` | Sidebar toggled; emits `isCollapsed` |
-| `itemSelect`    | `string`  | Item selected; emits the item `id`   |
+| Event           | Payload   | Description                                                    |
+| --------------- | --------- | -------------------------------------------------------------- |
+| `sidebarToggle` | `boolean` | Emits `isCollapsed` — `true` when sidebar just collapsed       |
+| `itemSelect`    | `string`  | Emits the `id` of the leaf item clicked (not parent/group items) |
 
 **Public methods:**
 
@@ -1237,35 +1689,48 @@ Collapsible lateral navigation sidebar with nested menus, accordion behavior and
 | `expand()`   | Expand the sidebar              |
 | `toggle()`   | Toggle collapsed/expanded state |
 
-**`NavbarItem` structure:**
+**Slots:**
+
+| Slot      | Description                                                                         |
+| --------- | ----------------------------------------------------------------------------------- |
+| `brand`   | Brand/logo area in the header — clicking it also toggles the sidebar               |
+| `end`     | Right side of the header (e.g. user avatar, icons)                                  |
+| default   | Main content area rendered next to the sidebar (`ms-navbar-main` div)              |
+
+**Behavior:**
+- **Collapsed + desktop**: items show as icon-only buttons with `ms-tooltip` (label on hover)
+- **Mobile (`< 768px`)**: sidebar becomes an overlay drawer; no tooltip shown in collapsed state
+- **Click outside**: clicking anywhere outside the sidebar while it is open collapses it automatically
+
+**`NavbarItem` / `NavbarChildItem` interfaces:**
 
 ```typescript
 interface NavbarItem {
-  id: string;
+  id?: string;                       // optional — but required for activeItemId and itemSelect to work
   label: string;
-  icon?: string; // HTML string or CSS class
-  url?: string;
-  action?: (event: Event) => void;
+  icon?: string;                     // HTML string (e.g. '<ms-icon>') or CSS class string
+  url?: string;                      // navigates via window.location.href; '#' is ignored
+  action?: (event: Event) => void;   // receives CustomEvent with { id, label, originalEvent }
   disabled?: boolean;
-  customClass?: string;
-  type?: "divider"; // Renders a separator line instead of an item
+  customClass?: string;              // applied to the item button element
+  type?: 'divider' | 'item';        // 'divider' renders a separator line
   children?: NavbarChildItem[];
 }
 
 interface NavbarChildItem {
-  id: string;
-  text: string;
+  id?: string;
+  text?: string;                     // display text (not label)
   icon?: string;
   url?: string;
   disabled?: boolean;
-  type?: "divider";
-  action?: (event: Event) => void;
-  children?: NavbarChildItem[]; // Supports recursive nesting
+  type?: 'divider' | 'item';
+  action?: (event: Event) => void;   // receives CustomEvent with { id, text, originalEvent }
+  children?: NavbarChildItem[];      // supports recursive nesting
 }
 ```
 
 ```tsx
-// React — controlling collapse via ref
+// React — full layout with slots and programmatic control
 import { useRef } from "react";
 
 const navRef = useRef<HTMLMsNavbarElement>(null);
@@ -1275,16 +1740,17 @@ const items = [
     id: "dashboard",
     label: "Dashboard",
     icon: '<ms-icon name="home"></ms-icon>',
+    url: "/dashboard",
   },
   {
     id: "reports",
     label: "Reports",
     icon: '<ms-icon name="chart"></ms-icon>',
     children: [
-      { id: "sales", text: "Sales" },
-      { id: "users", text: "Users" },
-      { id: "divider-1", text: "", type: "divider" },
-      { id: "export", text: "Export" },
+      { id: "sales", text: "Sales", url: "/reports/sales" },
+      { id: "users", text: "Users", url: "/reports/users" },
+      { type: "divider" },
+      { id: "export", text: "Export", action: (e) => handleExport(e) },
     ],
   },
 ];
@@ -1293,10 +1759,14 @@ const items = [
   ref={navRef}
   items={items}
   activeItemId={activeId}
-  accordion
-  onItemSelect={(e) => navigate(e.detail)}
+  showToggleButton
+  onItemSelect={(e) => setActiveId(e.detail)}
   onSidebarToggle={(e) => setCollapsed(e.detail)}
-/>;
+>
+  <span slot="brand"><img src="/logo.svg" /></span>
+  <span slot="end"><UserAvatar /></span>
+  <MainContent />  {/* default slot = main content area */}
+</MsNavbar>
 
 // Programmatic control:
 navRef.current?.collapse();
@@ -1308,19 +1778,19 @@ navRef.current?.toggle();
 
 #### `ms-sidebar`
 
-Off-canvas panel (drawer) that slides in from any edge of the screen.
+Off-canvas panel (drawer) that slides in from any edge of the screen. `shadow: false` — external CSS penetrates.
 
 | Prop          | Type                                     | Default  | Description                                                                                                      |
 | ------------- | ---------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------- |
-| `visible`     | `boolean`                                | `false`  | Show/hide the panel                                                                                              |
+| `visible`     | `boolean` (mutable)                      | `false`  | Show/hide the panel; component sets it to `false` internally when closing                                        |
 | `position`    | `'left' \| 'right' \| 'top' \| 'bottom'` | `'left'` | Edge from which the panel slides in                                                                              |
 | `dismissible` | `boolean`                                | `true`   | Close the panel when clicking the backdrop overlay                                                               |
 | `fullScreen`  | `boolean`                                | `false`  | Expand to fill the entire viewport                                                                               |
 | `content`     | `boolean`                                | `false`  | When `true`, use the named slot `content` instead of the default layout (which includes a built-in close button) |
-| `idComponent` | `string`                                 | —        | HTML `id` for the panel element                                                                                  |
-| `class`       | `string`                                 | —        | Extra CSS class                                                                                                  |
+| `idComponent` | `string`                                 | —        | HTML `id` applied to the outer container `div` (not the panel itself)                                           |
+| `class`       | `string`                                 | —        | Extra CSS class on the panel element                                                                             |
 
-**Events:** `hide` — emits `false` when the panel closes.
+**Events:** `hide` — emits `false` when the panel closes (always `false`).
 
 **Slots:**
 
@@ -1342,37 +1812,47 @@ Off-canvas panel (drawer) that slides in from any edge of the screen.
 
 #### `ms-steps`
 
-Step indicator for a wizard or process.
+Step indicator for a wizard or process. `shadow: false` — external CSS penetrates.
 
-| Prop          | Type         | Default | Description                               |
-| ------------- | ------------ | ------- | ----------------------------------------- |
-| `steps`       | `StepItem[]` | —       | Steps list                                |
-| `activeIndex` | `number`     | `0`     | Current active step index (mutable)       |
-| `readonly`    | `boolean`    | `true`  | When `true` clicks do not change the step |
-| `customClass` | `string`     | —       | Extra CSS class                           |
+| Prop          | Type         | Default     | Description                                                   |
+| ------------- | ------------ | ----------- | ------------------------------------------------------------- |
+| `steps`       | `StepItem[]` | `undefined` | Steps data. When omitted the component uses named slots instead |
+| `activeIndex` | `number` (mutable) | `0`  | Current active step index (0-based); reactive via `@Watch`    |
+| `readonly`    | `boolean`    | `true`      | When `true`, all steps are non-clickable (disabled)           |
+| `customClass` | `string`     | `undefined` | Extra CSS class on the `<nav>` element                        |
 
-**`StepItem` type:**
+**`StepItem` interface:**
 
 ```typescript
 interface StepItem {
-  label: string;
+  label?: string;                       // step label text
+  icon?: string;                        // CSS class for an icon (e.g. 'pi pi-user')
+  disabled?: boolean;                   // disables this specific step
+  command?: (event?: any) => void;      // callback fired on click; receives { originalEvent, item, index }
+  template?: string;                    // HTML string — replaces the default number + icon + label marker
 }
 ```
 
+> **Two rendering modes:**
+> - **`steps` prop provided** → renders from the array using `renderStepMarker` (number, icon, label)
+> - **`steps` not provided** → counts named slot elements and renders slots `step-{0}`, `step-{1}`, etc.
+
+> **Clicking active or disabled step does nothing.** No event is emitted.
+
 **Events:**
 
-| Event        | Payload  | Description                                           |
-| ------------ | -------- | ----------------------------------------------------- |
-| `stepChange` | `number` | Emitted when a step is clicked (only if not readonly) |
-| `stepSelect` | `any`    | Emitted when a step item is selected                  |
+| Event        | Payload                                       | Description                                     |
+| ------------ | --------------------------------------------- | ----------------------------------------------- |
+| `stepChange` | `number`                                      | Emitted on click; the new active step index     |
+| `stepSelect` | `{ originalEvent: Event, item: StepItem \| null, index: number }` | Same click, full context |
 
-**Slots:** `step-{n}` — custom content inside step n (zero-based).
+**Slots:** `step-{n}` — custom marker for step n (slot mode only, when `steps` prop is not set).
 
 ```tsx
-// React
+// React — props mode
 const steps = [
   { label: "Personal data" },
-  { label: "Address" },
+  { label: "Address", icon: "pi pi-map-marker" },
   { label: "Confirmation" },
 ];
 
@@ -1381,7 +1861,14 @@ const steps = [
   activeIndex={currentStep}
   readonly={false}
   onStepChange={(e) => setCurrentStep(e.detail)}
-/>;
+/>
+
+// React — slot mode (no steps prop)
+<MsSteps activeIndex={currentStep} readonly={false} onStepChange={(e) => setCurrentStep(e.detail)}>
+  <span slot="step-0">Personal data</span>
+  <span slot="step-1">Address</span>
+  <span slot="step-2">Confirmation</span>
+</MsSteps>
 ```
 
 ---
@@ -1394,66 +1881,130 @@ const steps = [
 
 Status badge/label.
 
-| Prop       | Type                                           | Default   | Description   |
-| ---------- | ---------------------------------------------- | --------- | ------------- |
-| `value`    | `string`                                       | —         | Badge text    |
-| `severity` | `'info' \| 'success' \| 'warning' \| 'danger'` | —         | Color variant |
-| `size`     | `'small' \| 'medium' \| 'large' \| 'xlarge'`   | `'small'` | Size          |
+| Prop       | Type                                           | Default   | Description                             |
+| ---------- | ---------------------------------------------- | --------- | --------------------------------------- |
+| `value`    | `string`                                       | —         | Badge text                              |
+| `severity` | `'info' \| 'success' \| 'warning' \| 'danger'` | —         | Color variant                           |
+| `size`     | `'small' \| 'medium' \| 'large'`               | `'small'` | Size — **no `'xlarge'` option**         |
+| `class`    | `string`                                       | —         | Extra CSS class on the badge element    |
 
-> **Note:** there is no `'default'` severity. If `severity` is omitted the badge renders without a colour class.
+> **Severity omitida:** aplica la clase CSS `badge-default` (color neutro). No usar `severity="default"` — ese valor no existe; simplemente omitir el prop.
 
 ```html
 <ms-badge value="Active" severity="success"></ms-badge>
 <ms-badge value="3" severity="danger" size="small"></ms-badge>
+<ms-badge value="Pending"></ms-badge>  <!-- sin severity → badge-default -->
+```
+
+```tsx
+// React
+<MsBadge value={row.status} severity={row.active ? 'success' : 'danger'} />
+<MsBadge value="New" severity="info" size="medium" />
 ```
 
 ---
 
 #### `ms-icon`
 
-Displays an SVG icon from the internal registry.
+Displays an SVG icon from the internal registry. `shadow: false`.
 
-| Prop          | Type               | Default        | Description           |
-| ------------- | ------------------ | -------------- | --------------------- |
-| `name`        | `IconName`         | —              | Icon name (type-safe) |
-| `size`        | `number \| string` | `24`           | Size in px            |
-| `color`       | `string`           | `currentColor` | SVG color             |
-| `customClass` | `string`           | —              | Extra CSS class       |
+| Prop          | Attribute      | Type               | Default          | Description                                               |
+| ------------- | -------------- | ------------------ | ---------------- | --------------------------------------------------------- |
+| `name`        | `name`         | `IconName`         | —                | Icon name — invalid names log a warning and render nothing |
+| `size`        | `size`         | `number \| string` | `24`             | Icon size: number → px, string → used as-is (e.g. `'2rem'`, `'100%'`) |
+| `color`       | `color`        | `string`           | `'currentColor'` | Sets SVG **stroke** color (`fill="none"` — fill colors have no effect) |
+| `customClass` | `custom-class` | `string`           | —                | Extra CSS class on the host element                       |
+
+**Available icon names:**
+
+```
+// General
+filter · info · copy · menu · download · x · home · search · calendar
+alert-circle · alert-triangle · arrow-left · arrow-right · bell · check
+check-circle · chevron-down · chevron-up · chevron-left · chevron-right
+edit · eye · eye-off · lock · mail · minus · plus · refresh · settings
+trash · unlock · upload · user
+
+// Navigation (ZEUS sidebar)
+nav-administration · nav-agent · nav-business-intelligence · nav-callcenter-ai
+nav-compliance · nav-customer · nav-finance · nav-home · nav-operations
+nav-owner · nav-product · nav-sales · nav-zeus-lab
+```
 
 ```html
 <ms-icon name="home" size="32" color="#007bff"></ms-icon>
 <ms-icon name="check" color="green"></ms-icon>
+<ms-icon name="trash" size="1.5rem"></ms-icon>
+```
+
+```tsx
+// React
+<MsIcon name="settings" size={20} color="var(--maxi-color-primary)" />
 ```
 
 ---
 
 #### `ms-image`
 
-Image component with additional features.
+Image component with optional click-to-preview modal (zoom + rotate). Uses **`shadow: true`**.
 
-| Prop      | Type      | Default | Description             |
-| --------- | --------- | ------- | ----------------------- |
-| `src`     | `string`  | —       | Image URL               |
-| `alt`     | `string`  | —       | Alt text                |
-| `width`   | `string`  | —       | Width                   |
-| `height`  | `string`  | —       | Height                  |
-| `preview` | `boolean` | `false` | Enable click-to-preview |
+| Prop            | Attribute        | Type               | Default | Description                                                                         |
+| --------------- | ---------------- | ------------------ | ------- | ----------------------------------------------------------------------------------- |
+| `src` *         | `src`            | `string`           | —       | Image URL — **required**                                                            |
+| `alt` *         | `alt`            | `string`           | —       | Alt text — **required**                                                             |
+| `width`         | `width`          | `number \| string` | —       | Container width — accepts number (→ px) or `'200'` / `'200px'`; `'50%'`/`'auto'` silently ignored |
+| `height`        | `height`         | `number \| string` | —       | Container height — same rules as `width`                                            |
+| `preview`       | `preview`        | `boolean`          | `false` | Enable click-to-preview modal; shows a magnifier overlay on hover                  |
+| `zoomSrc`       | `zoom-src`       | `string`           | —       | URL for the higher-res image shown in the modal; falls back to `src` if not set    |
+| `indicatorIcon` | `indicator-icon` | `string`           | —       | URL for a custom overlay indicator icon; defaults to a built-in magnifier SVG      |
+
+> **`width`/`height` only accept px values.** Passing `'50%'`, `'auto'`, or `'2rem'` is silently ignored — the dimension will be unset.
+
+**Preview modal** (requires `preview=true`):
+- Click image → opens modal with zoom and rotation controls
+- Zoom range: 0.4× – 1.5× (step 0.1)
+- Keyboard shortcuts: `Escape` close · `←`/`→` rotate ±90° · `+`/`-` zoom in/out
+
+**Slots:** `indicatorIcon` — custom overlay indicator content (overrides `indicatorIcon` prop)
+
+**Shadow parts:** `image` · `indicator` · `indicator-icon` · `modal-image`
+
+```html
+<!-- Basic -->
+<ms-image src="/photo.jpg" alt="Product photo" width="300" height="200"></ms-image>
+
+<!-- Preview with separate zoom image -->
+<ms-image
+  src="/thumb.jpg"
+  alt="Certificate"
+  width="200"
+  preview
+  zoom-src="/certificate-hires.jpg"
+></ms-image>
+```
+
+```tsx
+// React
+<MsImage src="/photo.jpg" alt="Product" width={300} height={200} preview />
+```
 
 ---
 
 #### `ms-message`
 
-Inline alert / message banner.
+Inline alert / message banner. `shadow: true` — external CSS does not penetrate; use CSS custom properties for theming.
 
 | Prop          | Type                                                          | Default  | Description              |
 | ------------- | ------------------------------------------------------------- | -------- | ------------------------ |
 | `variant`     | `'danger' \| 'success' \| 'warning' \| 'info' \| 'secondary'` | `'info'` | Color / semantic variant |
 | `noIcon`      | `boolean`                                                     | `false`  | Hide the built-in icon   |
-| `customClass` | `string`                                                      | `''`     | Extra CSS class          |
+| `customClass` | `string`                                                      | `''`     | Extra CSS class on inner container |
 
 > **Content via slot:** there is no `text` prop. Place content in the **default slot**.
 
 > **No `severity` prop, no `closable`, no `life`.** Use `variant` instead of `severity`.
+
+> **`secondary` icon:** `secondary` variant uses the same icon as `info` (both fall to the default case internally).
 
 **Slots:** default — message content (text, HTML, or other components).
 
@@ -1476,36 +2027,27 @@ Inline alert / message banner.
 
 #### `ms-notification`
 
-Floating toast notification. Controlled entirely via **props** — there is no `show()` method.
+Floating toast notification. Controlled entirely via **props** — there is no `show()` method. `shadow: false` — external CSS penetrates.
 
-| Prop          | Type                                                                                                          | Default       | Description                                                     |
-| ------------- | ------------------------------------------------------------------------------------------------------------- | ------------- | --------------------------------------------------------------- |
-| `idComponent` | `string`                                                                                                      | —             | HTML `id` for the element                                       |
-| `visible`     | `boolean`                                                                                                     | `false`       | Show/hide the notification (reflected, mutable)                 |
-| `severity`    | `'info' \| 'success' \| 'warning' \| 'alert'`                                                                 | `'info'`      | Semantic type                                                   |
-| `summary`     | `string \| null`                                                                                              | `null`        | Title / summary text                                            |
-| `detail`      | `string \| null`                                                                                              | `null`        | Body / detail text                                              |
-| `life`        | `number \| null`                                                                                              | `3000`        | Time in ms before auto-hiding; set to `null` to keep it visible |
-| `position`    | `'top-left' \| 'top-center' \| 'top-right' \| 'center' \| 'bottom-left' \| 'bottom-center' \| 'bottom-right'` | `'top-right'` | Screen position                                                 |
+| Prop          | Type                                                                                                          | Default       | Description                                              |
+| ------------- | ------------------------------------------------------------------------------------------------------------- | ------------- | -------------------------------------------------------- |
+| `idComponent` | `string`                                                                                                      | `undefined`   | HTML `id` for the element                                |
+| `visible`     | `boolean`                                                                                                     | `false`       | Show/hide the notification (`reflect: true`, `mutable: true`) |
+| `severity`    | `'info' \| 'success' \| 'warning' \| 'alert'`                                                                 | `'info'`      | Semantic type                                            |
+| `summary`     | `string \| null`                                                                                              | `null`        | Title / summary text                                     |
+| `detail`      | `string \| null`                                                                                              | `null`        | Body / detail text                                       |
+| `life`        | `number \| null`                                                                                              | `3000`        | Auto-hide delay in ms                                    |
+| `position`    | `'top-left' \| 'top-center' \| 'top-right' \| 'center' \| 'bottom-left' \| 'bottom-center' \| 'bottom-right'` | `'top-right'` | Screen position                                          |
 
 > **Severity values:** `'info'`, `'success'`, `'warning'`, `'alert'`. Not `'warn'` or `'error'`.
 
 > **No `show()` method.** Toggle `visible` to show/hide.
 
-**Usage pattern in React — bind props directly:**
+> **`life: null` does NOT keep it visible.** The component uses `setTimeout(fn, this.life)` with no null guard — `setTimeout(fn, null)` fires immediately (0 ms). To keep a notification visible indefinitely, there is no built-in mechanism; you must manage visibility entirely from outside.
 
-```tsx
-<MsNotification
-  visible={showNotif}
-  severity="success"
-  summary="Saved"
-  detail="Changes were saved successfully."
-  life={3000}
-  onVisibleChange={() => setShowNotif(false)}
-/>
-```
+> **No `visibleChange` event.** The component has no `@Event()`. When the `life` timeout expires it sets `visible = false` internally via the mutable prop — but React state is NOT updated. This means if your React state stays `visible: true`, setting it to `true` again will not re-trigger the `@Watch` and the notification won't show again. **Always reset your state back to `false`** after showing.
 
-**Usage pattern — set `visible` via state:**
+**Correct usage pattern in React:**
 
 ```tsx
 const [notif, setNotif] = useState({
@@ -1516,12 +2058,9 @@ const [notif, setNotif] = useState({
 });
 
 function showSuccess(msg: string) {
-  setNotif({
-    visible: true,
-    severity: "success",
-    summary: "Done",
-    detail: msg,
-  });
+  // 1. Set visible: true to show
+  setNotif({ visible: true, severity: "success", summary: "Done", detail: msg });
+  // 2. Manually reset state after life duration — required to allow re-triggering
   setTimeout(() => setNotif((n) => ({ ...n, visible: false })), 3000);
 }
 
@@ -1530,6 +2069,7 @@ function showSuccess(msg: string) {
   severity={notif.severity as any}
   summary={notif.summary}
   detail={notif.detail}
+  life={3000}
 />;
 ```
 
@@ -1537,29 +2077,33 @@ function showSuccess(msg: string) {
 
 #### `ms-skeleton`
 
-Loading skeleton placeholder.
+Loading skeleton placeholder. `shadow: true` — external CSS does not penetrate.
 
-| Prop           | Type     | Default | Description                                    |
-| -------------- | -------- | ------- | ---------------------------------------------- |
-| `width`        | `string` | —       | CSS width (e.g. `'200px'`, `'50%'`)            |
-| `height`       | `string` | —       | CSS height (e.g. `'1rem'`)                     |
-| `shape`        | `string` | —       | `'circle'` for round shape; omit for rectangle |
-| `borderRadius` | `string` | —       | Custom border radius                           |
+| Prop           | Type             | Default | Rendered default | Description                                  |
+| -------------- | ---------------- | ------- | ---------------- | -------------------------------------------- |
+| `width`        | `string \| null` | `null`  | `'100%'`         | CSS width                                    |
+| `height`       | `string \| null` | `null`  | `'1rem'`         | CSS height                                   |
+| `borderRadius` | `string \| null` | `null`  | `'4px'`          | CSS border-radius                            |
+| `shape`        | `string \| null` | `null`  | —                | Passed as HTML attribute for CSS selector use — **not used in the render template**; to make a circle use `borderRadius="50%"` instead |
+| `class`        | `string \| null` | `null`  | —                | Extra CSS class on the inner div             |
 
-> **Note:** there is no `animation` prop. The shimmer animation is always active.
+> **No `animation` prop.** The shimmer animation is always active.
+
+> **`shape` prop has no effect on styles or classes in the render.** It is only useful as an HTML attribute if the consuming project's CSS targets `:host([shape="circle"])`. For a reliable circle, use `borderRadius="50%"`.
 
 ```html
 <ms-skeleton height="200px"></ms-skeleton>
-<ms-skeleton height="1rem" style="margin-top: 8px"></ms-skeleton>
-<ms-skeleton height="1rem" width="60%" style="margin-top: 4px"></ms-skeleton>
-<ms-skeleton shape="circle" width="50px" height="50px"></ms-skeleton>
+<ms-skeleton height="1rem" width="60%"></ms-skeleton>
+
+<!-- Circle via borderRadius -->
+<ms-skeleton width="50px" height="50px" borderRadius="50%"></ms-skeleton>
 ```
 
 ---
 
 #### `ms-spinner`
 
-Circular loading indicator (shadow DOM).
+12-dot pulsing loading indicator. `shadow: true` — external CSS does not penetrate.
 
 | Prop     | Type     | Default     | Description                      |
 | -------- | -------- | ----------- | -------------------------------- |
@@ -1582,34 +2126,43 @@ Circular loading indicator (shadow DOM).
 
 Main button component. Uses **shadow DOM** for full encapsulation.
 
-| Prop          | Type                                                                                               | Default     | Description                              |
-| ------------- | -------------------------------------------------------------------------------------------------- | ----------- | ---------------------------------------- |
-| `label`       | `string`                                                                                           | —           | Button text                              |
-| `variant`     | `'primary' \| 'secondary' \| 'danger' \| 'warning' \| 'success' \| 'info' \| 'text' \| 'outlined'` | `'primary'` | Visual variant                           |
-| `size`        | `'small' \| 'medium' \| 'large'`                                                                   | `'medium'`  | Size                                     |
-| `type`        | `'button' \| 'submit' \| 'reset'`                                                                  | `'button'`  | HTML type                                |
-| `disabled`    | `boolean`                                                                                          | `false`     | Disabled                                 |
-| `loading`     | `boolean`                                                                                          | `false`     | Shows spinner and disables the button    |
-| `icon`        | `string`                                                                                           | —           | Icon URL or class                        |
-| `class`       | `string`                                                                                           | —           | Host CSS class                           |
-| `customClass` | `string`                                                                                           | —           | CSS class injected inside the shadow DOM |
+| Prop          | Type                                                                                                                                              | Default     | Description                                                  |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ------------------------------------------------------------ |
+| `label`       | `string`                                                                                                                                          | —           | Button text. When omitted, renders a `<slot>` for custom content |
+| `variant`     | `'primary' \| 'secondary' \| 'success' \| 'warning' \| 'danger' \| 'outline-primary' \| 'outline-secondary' \| 'outline-success' \| 'outline-warning' \| 'outline-danger'` | `'primary'` | Visual variant — **no `'info'`, `'text'` or `'outlined'`** |
+| `size`        | `'small' \| 'medium' \| 'large'`                                                                                                                  | `'medium'`  | Size                                                         |
+| `type`        | `'button' \| 'submit' \| 'reset'`                                                                                                                 | `'button'`  | HTML button type                                             |
+| `disabled`    | `boolean`                                                                                                                                         | `false`     | Disabled state                                               |
+| `loading`     | `boolean`                                                                                                                                         | `false`     | Shows `MsSpinner` (1.5rem) and disables the button           |
+| `icon`        | `string`                                                                                                                                          | —           | Image URL rendered as `<img>` inside the button              |
+| `class`       | `string`                                                                                                                                          | —           | Applied to the host element **and** injected into shadow DOM |
+| `customClass` | `string`                                                                                                                                          | —           | Injected into shadow DOM **only** — not duplicated on host   |
 
-**Events:** `clickEvent` — emits `MouseEvent`.
+**Events:** `clickEvent` — emits `MouseEvent`. Not fired when `disabled` or `loading`.
 
-> **Technical note (shadow DOM):** `ms-button` is one of the few components using shadow DOM. It uses a `MutationObserver` to inject host classes inside the shadow root, allowing external utility classes (Tailwind, project utilities) to affect the inner style.
+> **Shadow DOM + external CSS injection.** When `class` or `customClass` is set, the component reads all rules from `document.styleSheets` matching those class names and re-injects them inside the shadow root (scoped to `.ms-button.{className}`). This allows external utility classes (Tailwind, project utilities) to style the inner button.
+
+> **Icon-only mode.** When `icon` is set and `label` is omitted, the component adds the `only-icon` CSS class to the inner button for compact square styling.
+
+> **Slot.** When `label` is omitted, the button renders a `<slot />` — pass custom JSX content as children.
 
 ```tsx
-// React
-<MsButton
-  label="Submit form"
-  variant="primary"
-  size="large"
-  type="submit"
-  loading={isSubmitting}
-  onClickEvent={() => handleSubmit()}
-/>
+// React — standard variants
+<MsButton label="Save" variant="primary" size="large" type="submit" loading={isSaving} onClickEvent={handleSave} />
+<MsButton label="Cancel" variant="outline-primary" onClickEvent={() => router.back()} />
+<MsButton label="Delete" variant="danger" onClickEvent={handleDelete} />
+<MsButton label="Approve" variant="outline-success" onClickEvent={handleApprove} />
 
-<MsButton label="Cancel" variant="outlined" onClickEvent={() => router.back()} />
+// React — icon-only (no label → only-icon mode)
+<MsButton variant="secondary" icon="/icons/edit.svg" onClickEvent={handleEdit} />
+
+// React — label + icon
+<MsButton label="Export" variant="outline-primary" icon="/icons/download.svg" onClickEvent={handleExport} />
+
+// React — custom slot content (no label prop)
+<MsButton variant="primary" onClickEvent={handleClick}>
+  <span>📄 Download PDF</span>
+</MsButton>
 ```
 
 ---
@@ -1618,38 +2171,73 @@ Main button component. Uses **shadow DOM** for full encapsulation.
 
 Date and time picker (datepicker).
 
-| Prop            | Type                                   | Default    | Description                               |
-| --------------- | -------------------------------------- | ---------- | ----------------------------------------- |
-| `idComponent`   | `string`                               | —          | HTML `id`                                 |
-| `label`         | `string`                               | —          | Floating label                            |
-| `placeholder`   | `string`                               | —          | Placeholder                               |
-| `value`         | `string \| number \| string[] \| null` | `null`     | Selected date(s) in ISO 8601 or timestamp |
-| `selectionMode` | `'single' \| 'range' \| 'multiple'`    | `'single'` | Selection mode                            |
-| `minDate`       | `Date`                                 | —          | Minimum selectable date                   |
-| `maxDate`       | `Date`                                 | —          | Maximum selectable date                   |
-| `showTime`      | `boolean`                              | `false`    | Show time picker                          |
-| `hourFormat`    | `'12' \| '24'`                         | `'24'`     | Time format                               |
-| `stepHour`      | `number`                               | `1`        | Hour increment                            |
-| `stepMinute`    | `number`                               | `1`        | Minute increment                          |
-| `closeOnSelect` | `boolean`                              | `true`     | Close on selection (`single` mode only)   |
-| `disabled`      | `boolean`                              | `false`    | Disabled                                  |
-| `required`      | `boolean`                              | `false`    | Required                                  |
-| `invalid`       | `boolean`                              | `false`    | Visual error                              |
-| `errorMessage`  | `string`                               | —          | Error message                             |
+| Prop                 | Attribute              | Type                                   | Default          | Description                                                                         |
+| -------------------- | ---------------------- | -------------------------------------- | ---------------- | ----------------------------------------------------------------------------------- |
+| `idComponent`        | `id-component`         | `string`                               | `'ms-calendar'`  | HTML `id`                                                                           |
+| `class`              | `class`                | `string \| null`                       | `null`           | Extra CSS class on host wrapper                                                     |
+| `label`              | `label`                | `string \| null`                       | `null`           | Floating label (enables label-floating layout)                                      |
+| `placeholder`        | `placeholder`          | `string`                               | `'Select a date'`| Input placeholder                                                                   |
+| `value`              | `value`                | `string \| number \| string[] \| null` | `null`           | Selected date(s). Single: `'MM/DD/YYYY'` or `'MM/DD/YYYY HH:mm'`. Range: `string[]`|
+| `selectionMode`      | `selection-mode`       | `'single' \| 'range'`                  | `'single'`       | Selection mode — only these two values exist                                        |
+| `minDate`            | **JS only**            | `Date \| null`                         | `null`           | Minimum selectable date — must be set as JS prop, no HTML attribute                 |
+| `maxDate`            | **JS only**            | `Date \| null`                         | `null`           | Maximum selectable date — must be set as JS prop, no HTML attribute                 |
+| `showIcon`           | `show-icon`            | `boolean`                              | `false`          | Show calendar icon button inside the input                                          |
+| `showTime`           | `show-time`            | `boolean`                              | `false`          | Show hour/minute time picker below the calendar                                     |
+| `hourFormat`         | `hour-format`          | `'12' \| '24'`                         | `'24'`           | Time format — `'12'` shows AM/PM toggle                                             |
+| `stepHour`           | `step-hour`            | `number`                               | `1`              | Hour increment step                                                                 |
+| `stepMinute`         | `step-minute`          | `number`                               | `1`              | Minute increment step                                                               |
+| `showHourControls`   | `show-hour-controls`   | `boolean`                              | `true`           | Show +/− buttons for hours                                                          |
+| `showMinuteControls` | `show-minute-controls` | `boolean`                              | `true`           | Show +/− buttons for minutes                                                        |
+| `showAmPmControls`   | `show-am-pm-controls`  | `boolean`                              | `true`           | Show AM/PM toggle (only when `hourFormat='12'`)                                     |
+| `closeOnSelect`      | `close-on-select`      | `boolean`                              | `false`          | Auto-close after selection. Ignored when `showTime=true`. Range: closes after end date |
+| `disabled`           | `disabled`             | `boolean`                              | `false`          | Disabled                                                                            |
+| `required`           | `required`             | `boolean`                              | `false`          | Required — validates automatically on blur/select                                   |
+| `invalid`            | `invalid`              | `boolean`                              | `false`          | Force error state                                                                   |
+| `errorMessage`       | `error-message`        | `string \| null`                       | `null`           | Error message shown when `invalid=true`                                             |
 
 **Events:**
 
-| Event              | Payload              | Description                  |
-| ------------------ | -------------------- | ---------------------------- |
-| `update`           | `string \| string[]` | Selected date(s) in ISO 8601 |
-| `validationChange` | `ValidationDetail`   | Validation state             |
+| Event              | Payload                        | Description                                                                              |
+| ------------------ | ------------------------------ | ---------------------------------------------------------------------------------------- |
+| `update`           | `string \| string[] \| null`   | Date value. Single: `'MM/DD/YYYY'` or `'MM/DD/YYYY HH:mm'`. Range: `['MM/DD/YYYY', 'MM/DD/YYYY']`. Reset: `null` |
+| `validationChange` | `ValidationDetail`             | Fires on blur, select, and required/invalid changes                                      |
+
+**Important:**
+- `minDate` / `maxDate` are **JS-only props** — they cannot be set as HTML attributes. Always assign via JavaScript (React prop or `.minDate = new Date(...)`).
+- `value` format emitted/expected is `MM/DD/YYYY`, not ISO 8601. Parse accordingly.
+- Calendar auto-positions top/bottom based on available viewport space.
 
 ```tsx
-// React — range selector
+// React — single date
+<MsCalendar
+  label="Birth date"
+  selectionMode="single"
+  showIcon
+  onUpdate={(e) => setValue(e.detail)} // e.detail = 'MM/DD/YYYY'
+/>
+
+// React — range with JS-only minDate/maxDate
 <MsCalendar
   label="Vacation period"
   selectionMode="range"
-  onUpdate={(e) => setDateRange(e.detail)} // e.detail = ['2024-01-15', '2024-01-22']
+  showIcon
+  ref={(el) => {
+    if (el) {
+      el.minDate = new Date();
+      el.maxDate = new Date(Date.now() + 30 * 86400000);
+    }
+  }}
+  onUpdate={(e) => setRange(e.detail)} // e.detail = ['MM/DD/YYYY', 'MM/DD/YYYY']
+/>
+
+// React — with time picker
+<MsCalendar
+  selectionMode="single"
+  showTime
+  showIcon
+  hourFormat="12"
+  stepMinute={15}
+  onUpdate={(e) => setDateTime(e.detail)} // e.detail = 'MM/DD/YYYY HH:mm'
 />
 ```
 
@@ -1659,27 +2247,45 @@ Date and time picker (datepicker).
 
 Item carousel with drag support and responsive design.
 
-| Prop                | Type                 | Default | Description                   |
-| ------------------- | -------------------- | ------- | ----------------------------- |
-| `value`             | `any[]`              | `[]`    | Array of items to display     |
-| `numVisible`        | `number`             | `1`     | Number of visible items       |
-| `numScroll`         | `number`             | `1`     | Items advanced per navigation |
-| `infinite`          | `boolean`            | `false` | Infinite loop                 |
-| `showNavigators`    | `boolean`            | `true`  | Previous/next buttons         |
-| `showIndicators`    | `boolean`            | `true`  | Indicator dots                |
-| `autoplay`          | `boolean`            | `false` | Auto-advance                  |
-| `autoplayInterval`  | `number`             | `3000`  | Interval in ms                |
-| `responsiveOptions` | `ResponsiveOption[]` | `[]`    | Breakpoint configuration      |
-| `dragThreshold`     | `number`             | `20`    | Pixels to consider a drag     |
+| Prop                | Attribute           | Type                 | Default     | Description                                        |
+| ------------------- | ------------------- | -------------------- | ----------- | -------------------------------------------------- |
+| `value`             | **JS only**         | `any[]`              | `[]`        | Array of items to display — must be a JS prop      |
+| `numVisible`        | `num-visible`       | `number`             | `1`         | Number of visible items at once                    |
+| `numScroll`         | `num-scroll`        | `number`             | `1`         | Items advanced per navigation step                 |
+| `infinite`          | `infinite`          | `boolean`            | `false`     | Wrap around at ends                                |
+| `showNavigators`    | `show-navigators`   | `boolean`            | `true`      | Previous/next arrow buttons                        |
+| `showIndicators`    | `show-indicators`   | `boolean`            | `true`      | Dot indicators (hidden when only 1 page)           |
+| `autoplay`          | `autoplay`          | `boolean`            | `false`     | Auto-advance slides                                |
+| `autoplayInterval`  | `autoplay-interval` | `number`             | `3000`      | Autoplay interval in ms                            |
+| `responsiveOptions` | **JS only**         | `ResponsiveOption[]` | `undefined` | Breakpoint overrides — must be a JS prop           |
+| `customClass`       | `custom-class`      | `string`             | `''`        | Extra CSS class on the carousel wrapper            |
+| `dragThreshold`     | `drag-threshold`    | `number`             | `50`        | Min drag pixels to trigger navigation              |
 
-**Slots:** `item-carousel-{n}` for each item in the array (zero-based).
+**No events** — this component does not emit custom events.
+
+**Slots:** `item-carousel-{n}` for each item index (zero-based). One slot per item in `value`.
+
+**`ResponsiveOption` interface:**
+
+```typescript
+interface ResponsiveOption {
+  breakpoint: string;  // e.g. '768px' — matched against window.innerWidth
+  numVisible?: number; // overrides prop if matched
+  numScroll?: number;  // overrides prop if matched
+}
+```
+
+**Important — `responsiveOptions` ordering:** The algorithm iterates the array and the last matching breakpoint wins. Sort descending (largest first) so the most specific breakpoint takes precedence.
 
 ```tsx
 // React
-const slides = [{ img: "/img1.jpg" }, { img: "/img2.jpg" }];
-const responsive = [
-  { breakpoint: "768px", numVisible: 2, numScroll: 1 },
-  { breakpoint: "480px", numVisible: 1, numScroll: 1 },
+const slides = [{ img: "/img1.jpg" }, { img: "/img2.jpg" }, { img: "/img3.jpg" }];
+
+// Descending order required — largest breakpoint first
+const responsive: ResponsiveOption[] = [
+  { breakpoint: "1024px", numVisible: 3, numScroll: 1 },
+  { breakpoint: "768px",  numVisible: 2, numScroll: 1 },
+  { breakpoint: "480px",  numVisible: 1, numScroll: 1 },
 ];
 
 <MsCarousel
@@ -1692,7 +2298,7 @@ const responsive = [
   {slides.map((s, i) => (
     <img key={i} slot={`item-carousel-${i}`} src={s.img} />
   ))}
-</MsCarousel>;
+</MsCarousel>
 ```
 
 ---
@@ -1701,38 +2307,61 @@ const responsive = [
 
 Cascading submenu. Detects desktop/mobile for the open behavior.
 
-| Prop           | Type                          | Default | Description                           |
-| -------------- | ----------------------------- | ------- | ------------------------------------- |
-| `menuData`     | `CascadeMenuItem[] \| string` | `[]`    | Menu structure (array or JSON string) |
-| `minWidth`     | `string`                      | —       | Panel minimum width                   |
-| `width`        | `string`                      | —       | Panel width                           |
-| `activeItemId` | `string`                      | —       | Active item ID (visually highlighted) |
+| Prop           | Attribute        | Type                          | Default   | Description                                                       |
+| -------------- | ---------------- | ----------------------------- | --------- | ----------------------------------------------------------------- |
+| `menuData`     | `menu-data`      | `CascadeMenuItem[] \| string` | `[]`      | Menu structure — array or JSON string (parsed internally)         |
+| `minWidth`     | `min-width`      | `string`                      | `'220px'` | Panel minimum width (ignored when `width` is set)                 |
+| `width`        | `width`          | `string`                      | `''`      | Panel fixed width — overrides `minWidth` when set                 |
+| `activeItemId` | `active-item-id` | `string`                      | `''`      | ID of the active item. Parent items with an active child are also highlighted |
+| `customClass`  | `custom-class`   | `string`                      | `''`      | Extra CSS class on the outer wrapper                              |
 
-**Events:** `itemClick` — emits the clicked `CascadeMenuItem`.
+**Events:**
+
+| Event       | Payload  | Description                                                              |
+| ----------- | -------- | ------------------------------------------------------------------------ |
+| `itemClick` | `string` | The `id` of the clicked item. **NOT the full item object** — emits `item.id` only |
 
 **Behavior:**
 
-- Desktop: submenus open on hover
-- Mobile: submenus open on tap/click
-- Automatic overflow detection (panel flips if there is no space)
+- Desktop (`window.innerWidth > 768`): menu opens on hover, submenus expand on hover, auto-flips if overflowing right edge
+- Mobile (`window.innerWidth <= 768`): menu opens on tap, submenus expand/collapse on tap, full-width panel
+- Escape key closes the menu
+- `action` callback on an item takes priority over URL navigation
+
+**`CascadeMenuItem` interface:**
+
+```typescript
+interface CascadeMenuItem {
+  id?:       string;
+  text?:     string;                      // display label — use `text`, NOT `label`
+  icon?:     string;                      // HTML string (e.g. <svg>…</svg>) OR CSS class name
+  url?:      string;                      // navigates via window.location.href (skipped if '#')
+  disabled?: boolean;
+  type?:     'item' | 'divider';          // 'divider' renders a separator line, no text needed
+  children?: CascadeMenuItem[];           // use `children`, NOT `items`
+  action?:   (event: Event) => void;      // custom handler; when set, closes menu and skips URL nav
+}
+```
+
+> Note: `minWidth` and `width` fields exist in the interface but are **not used** by the renderer — only the component-level `minWidth`/`width` props apply to submenus.
 
 ```tsx
-// React
-// IMPORTANT: use `text` (not `label`) and `children` (not `items`)
+// React — IMPORTANT: use `text` (not `label`), `children` (not `items`)
 const menu: CascadeMenuItem[] = [
   {
     id: "dashboard",
     text: "Dashboard",
-    icon: '<ms-icon name="home"></ms-icon>',
+    icon: '<svg width="16" height="16">…</svg>', // HTML string
+    action: () => navigate("/dashboard"),        // action takes priority
   },
   {
     id: "reports",
     text: "Reports",
     children: [
-      { id: "sales", text: "Sales" },
-      { id: "users", text: "Users" },
-      { id: "div1", text: "", type: "divider" },
-      { id: "export", text: "Export" },
+      { id: "sales",  text: "Sales" },
+      { id: "users",  text: "Users" },
+      { type: "divider" },                       // no id/text needed
+      { id: "export", text: "Export", disabled: true },
     ],
   },
 ];
@@ -1740,8 +2369,8 @@ const menu: CascadeMenuItem[] = [
 <MsCascadeMenu
   menuData={menu}
   activeItemId="dashboard"
-  onItemClick={(e) => navigate(e.detail)}
-/>;
+  onItemClick={(e) => console.log(e.detail)} // e.detail = 'dashboard' (string id)
+/>
 ```
 
 ---
@@ -1750,56 +2379,94 @@ const menu: CascadeMenuItem[] = [
 
 Chart component powered by Chart.js.
 
-| Prop      | Type                                                                                        | Default     | Description             |
-| --------- | ------------------------------------------------------------------------------------------- | ----------- | ----------------------- |
-| `type`    | `'bar' \| 'line' \| 'pie' \| 'doughnut' \| 'radar' \| 'polarArea' \| 'bubble' \| 'scatter'` | —           | Chart type              |
-| `data`    | `ChartData`                                                                                 | —           | Data in Chart.js format |
-| `options` | `ChartOptions`                                                                              | `{}`        | Chart.js options        |
-| `variant` | `'primary' \| 'secondary' \| 'success' \| 'warning' \| 'danger' \| 'info' \| 'mixed'`       | `'primary'` | Automatic color palette |
-| `width`   | `string`                                                                                    | `'100%'`    | Container width         |
-| `height`  | `string`                                                                                    | `'400px'`   | Container height        |
+| Prop      | Attribute | Type                                                                                         | Default     | Description                                                    |
+| --------- | --------- | -------------------------------------------------------------------------------------------- | ----------- | -------------------------------------------------------------- |
+| `type`    | `type`    | `'bar'\|'line'\|'pie'\|'doughnut'\|'radar'\|'polarArea'\|'bubble'\|'scatter'`                | `'bar'`     | Chart type — changing it destroys and recreates the chart      |
+| `data`    | **JS only** | `ChartData`                                                                                | —           | Chart.js data object — must be a JS prop                       |
+| `options` | **JS only** | `ChartOptions`                                                                             | `{}`        | Chart.js options — merged on top of internal defaults          |
+| `variant` | `variant` | `'primary'\|'secondary'\|'success'\|'warning'\|'danger'\|'info'\|'mixed'`                    | `'primary'` | Automatic color palette applied to datasets                    |
+| `width`   | `width`   | `string`                                                                                     | `'100%'`    | Container width (CSS value)                                    |
+| `height`  | `height`  | `string`                                                                                     | `'400px'`   | Container height (CSS value)                                   |
+| `class`   | `class`   | `string`                                                                                     | `undefined` | Extra CSS class on the chart container div                     |
 
 **Events:**
 
-- `chartReady` — chart initialized
-- `chartClick` — click on chart element; emits `{ element, dataset, index }`
+| Event        | Payload                                                     | Description                                     |
+| ------------ | ----------------------------------------------------------- | ----------------------------------------------- |
+| `chartReady` | Chart.js instance                                           | Fired after chart initializes                   |
+| `chartClick` | `{ datasetIndex: number, index: number, value: number, label: string }` | Fired on click on a chart data point |
+
+**Behavior:**
+
+- `responsive: true` and `maintainAspectRatio: false` are always set internally; `options` can override them
+- `variant` palette is applied only when a dataset does not already have `backgroundColor` set — existing colors are preserved
+- For `pie`/`doughnut`, palette is applied per data point; for other types, per dataset
+- `chartClick` only fires when clicking an actual data element (not empty canvas area)
 
 ```tsx
 // React
 const data = {
-  labels: ["Jan", "Feb", "Mar", "Apr", "May"],
-  datasets: [{ label: "Sales 2024", data: [120, 190, 300, 250, 400] }],
+  labels: ["Jan", "Feb", "Mar"],
+  datasets: [{ label: "Sales 2024", data: [120, 190, 300] }],
 };
 
-<MsChart type="bar" data={data} variant="primary" height="300px" />;
+<MsChart
+  type="bar"
+  data={data}
+  variant="primary"
+  height="300px"
+  onChartReady={(e) => console.log(e.detail)} // e.detail = Chart.js instance
+  onChartClick={(e) => {
+    const { datasetIndex, index, value, label } = e.detail;
+    console.log(`Clicked ${label}: ${value}`);
+  }}
+/>
 ```
 
 ---
 
 #### `ms-dialog`
 
-Modal dialog with slots for header, body and footer.
+Modal dialog with slots for header, body, and footer. `shadow: false`.
 
-| Prop             | Type                                                 | Default    | Description                       |
-| ---------------- | ---------------------------------------------------- | ---------- | --------------------------------- |
-| `visible`        | `boolean`                                            | `false`    | Show/hide the dialog              |
-| `header`         | `string`                                             | —          | Header text (alternative to slot) |
-| `footer`         | `string`                                             | —          | Footer text (alternative to slot) |
-| `showFooter`     | `boolean`                                            | `true`     | Show footer area                  |
-| `closable`       | `boolean`                                            | `true`     | Show close button (X)             |
-| `position`       | `'center' \| 'top' \| 'bottom' \| 'left' \| 'right'` | `'center'` | Dialog position                   |
-| `styleComponent` | `string`                                             | —          | Inline styles on the container    |
-| `zIndex`         | `string`                                             | `'1000'`   | Z-index                           |
+| Prop             | Attribute          | Type                                                                                              | Default    | Description                                                          |
+| ---------------- | ------------------ | ------------------------------------------------------------------------------------------------- | ---------- | -------------------------------------------------------------------- |
+| `visible`        | `visible`          | `boolean`                                                                                         | `false`    | Show/hide the dialog — `mutable + reflect`                           |
+| `header`         | `header`           | `string \| any`                                                                                   | —          | Header text rendered as `<h3>`; if omitted, uses `slot="header"`     |
+| `footer`         | `footer`           | `string \| any`                                                                                   | —          | Footer text rendered as `<h3>`; if omitted, uses `slot="footer"`     |
+| `showFooter`     | `show-footer`      | `boolean`                                                                                         | **`false`** | Must be `true` to render the footer area — **default is false**     |
+| `closable`       | `closable`         | `boolean`                                                                                         | `true`     | Show the × close button                                              |
+| `position`       | `position`         | `'center'\|'top'\|'bottom'\|'left'\|'right'\|'top-left'\|'top-right'\|'bottom-left'\|'bottom-right'` | `'center'` | Dialog position on screen                                        |
+| `styleComponent` | `style-component`  | `string`                                                                                          | —          | Inline CSS string applied to the dialog box (e.g. `"width:600px;"`) |
+| `zIndex`         | `z-index`          | `string`                                                                                          | `'9000'`   | Z-index of the backdrop                                              |
+| `class`          | `class`            | `string \| null`                                                                                  | `null`     | Extra CSS class on the dialog box                                    |
+| `idComponent`    | `id-component`     | `string`                                                                                          | —          | `id` attribute on the dialog element                                 |
 
-**Events:** `hide` — dialog closed.
+**Events:**
+
+| Event  | Payload   | Description                                             |
+| ------ | --------- | ------------------------------------------------------- |
+| `hide` | `false`   | Fired when the × button is clicked; always emits `false` |
 
 **Slots:** `header` | default (body) | `footer`
+
+> The `footer` slot is only rendered when `showFooter={true}`. Forgetting this prop is the most common mistake.
+
+> **Header title overlaps the close button** when the text is long. Fix it by adding a `class` prop and scoping the CSS under it — never target `.ms-dialog-header` globally:
+> ```tsx
+> <MsDialog class="my-dialog" header="¡Bienvenido a ZEUS!" ...>
+> ```
+> ```css
+> .my-dialog .ms-dialog-header h3 { padding-right: 2.5rem; flex: 1; min-width: 0; }
+> .my-dialog .ms-dialog-close-btn { flex-shrink: 0; }
+> ```
 
 ```tsx
 // React
 <MsDialog
   visible={visible}
   header="Confirm deletion"
+  showFooter={true}
   onHide={() => setVisible(false)}
 >
   <p>Are you sure you want to delete this record?</p>
@@ -1818,50 +2485,79 @@ Modal dialog with slots for header, body and footer.
 
 #### `ms-table`
 
-Advanced data table with sorting, pagination, selection and expandable rows.
+Advanced data table with sorting, pagination, selection and expandable rows. `shadow: false` — external CSS penetrates.
 
-| Prop                 | Type                             | Default    | Description                                                                                             |
-| -------------------- | -------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------- |
-| `columns`            | `ColumnDef[]`                    | `[]`       | Column definitions                                                                                      |
-| `data`               | `any[]`                          | `[]`       | Data to display                                                                                         |
-| `selectionRow`       | `boolean`                        | `false`    | Per-row selection checkbox                                                                              |
-| `selections`         | `any[]`                          | `[]`       | Selected rows                                                                                           |
-| `paginator`          | `boolean`                        | `false`    | Pagination                                                                                              |
-| `rowsPerPage`        | `number`                         | `10`       | Rows per page                                                                                           |
-| `totalRecords`       | `number`                         | `0`        | Total record count — **required when `paginator={true}`**; use `data.length` for client-side pagination |
-| `expandableRow`      | `boolean`                        | `false`    | Expandable rows                                                                                         |
-| `sortable`           | `boolean`                        | `false`    | Sortable columns                                                                                        |
-| `reorderable`        | `boolean`                        | `false`    | Drag-to-reorder rows                                                                                    |
-| `columnsReorderable` | `boolean`                        | `false`    | Drag-to-reorder columns                                                                                 |
-| `rowGroupMode`       | `'subheader'`                    | —          | Row grouping by field                                                                                   |
-| `stickyHeader`       | `boolean`                        | `false`    | Sticky header on scroll                                                                                 |
-| `size`               | `'small' \| 'normal' \| 'large'` | `'normal'` | Row density                                                                                             |
+| Prop                      | Type                             | Default    | Description                                                                                  |
+| ------------------------- | -------------------------------- | ---------- | -------------------------------------------------------------------------------------------- |
+| `columns`                 | `ColumnDef[]`                    | `[]`       | Column definitions (see interface below)                                                     |
+| `data`                    | `any[]`                          | `[]`       | Data rows to display                                                                         |
+| `dataKey`                 | `string \| number`               | `'id'`     | Field used as unique row identifier for selection, expand and reorder                        |
+| `size`                    | `'small' \| 'normal' \| 'large'` | `'normal'` | Row density                                                                                  |
+| `class`                   | `string`                         | `undefined`| Extra CSS class on the `<table>` element                                                     |
+| `idComponent`             | `string`                         | `''`       | Prefix for internal unique cell IDs                                                          |
+| `selectionRow`            | `boolean`                        | `false`    | Add checkbox column for row selection                                                        |
+| `selections`              | `any[]`                          | `[]`       | Currently selected rows (controlled); synced via `@Watch`                                    |
+| `paginator`               | `boolean`                        | `false`    | Show built-in `ms-paginator` (client-side slice of `data`)                                   |
+| `rowsPerPage`             | `number`                         | `20`       | Rows per page                                                                                |
+| `page`                    | `number`                         | `0`        | Current page (0-based) for external pagination sync                                          |
+| `totalRecords`            | `number`                         | `0`        | Total records — required when `paginator=true`; pass `data.length` for client-side           |
+| `expandableRow`           | `boolean`                        | `false`    | Add expand/collapse button per row; shows `nestedTableContent` when expanded                 |
+| `nestedTableContent`      | `any`                            | `null`     | JSX/HTML rendered inside the expanded row (same content for all rows)                        |
+| `showFooter`              | `boolean`                        | `false`    | Show `<tfoot>` row (requires at least one column with `footer` defined)                      |
+| `loading`                 | `boolean`                        | `false`    | Show `ms-spinner` overlay on top of the table                                                |
+| `bordered`                | `boolean`                        | `false`    | Add border to all cells                                                                      |
+| `stickyHeader`            | `boolean`                        | `false`    | Sticky `<thead>` on scroll (use with `scrollerHeight`)                                       |
+| `scrollerHeight`          | `string`                         | `undefined`| CSS height for the scrollable container (e.g. `'400px'`); enables `overflow-y: auto`        |
+| `reorderable`             | `boolean`                        | `false`    | Drag-to-reorder rows. **Disabled automatically** if any column has `sortable=true` or there is an active sort |
+| `columnsReorderable`      | `boolean`                        | `false`    | Drag-to-reorder column headers. Same constraint as `reorderable`                             |
+| `sortField`               | `string`                         | `''`       | Currently sorted field (controlled)                                                          |
+| `sortOrder`               | `any`                            | `''`       | Current sort direction (controlled)                                                          |
+| `rowGroupMode`            | `'subheader'`                    | `undefined`| Group rows by a field value                                                                  |
+| `groupRowsBy`             | `string`                         | `undefined`| Field to group rows by (required when `rowGroupMode='subheader'`)                            |
+| `rowGroupHeaderTemplate`  | `(groupValue, groupData[]) => any` | `undefined` | Custom render function for the group header row                                           |
+| `rowClassName`            | `(row) => string`                | `undefined`| CSS class returned per row/cell                                                              |
+| `disabledRow`             | `(row) => boolean`               | `undefined`| Return `true` to disable a row (no click, no selection, no drag)                            |
+| `isFramework`             | `boolean`                        | `true`     | Internal flag — leave as default                                                             |
+
+> **No table-level `sortable` prop.** Sorting is per-column via `column.sortable`. The table sorts client-side by default; emit `sort` and handle externally for server-side sort.
+
+**`ColumnDef` interface:**
+
+```typescript
+interface ColumnDef {
+  header: string;                              // column header text
+  field?: string;                              // dot-path to the data property (e.g. 'user.name')
+  align?: 'left' | 'center' | 'right';        // cell content alignment
+  alignHeader?: 'left' | 'center' | 'right';  // header text alignment
+  width?: string;                              // CSS width (e.g. '120px', '10%')
+  sortable?: boolean;                          // enable sort icon and client-side sort for this column
+  footer?: string | ((data: any[]) => string); // footer cell — string or function returning HTML string
+  render?: (row: any, index: number) => any;  // custom cell renderer — return JSX (React) or Stencil VNode
+  disabled?: (row: any) => boolean;            // return true to disable the row from this column's logic
+}
+```
 
 **Events:**
 
-| Event             | Payload                 | Description       |
-| ----------------- | ----------------------- | ----------------- |
-| `rowClick`        | `any`                   | Row clicked       |
-| `selection`       | `any[]`                 | Selection changed |
-| `paginatorChange` | `{ first, rows, page }` | Page changed      |
-| `sort`            | `{ field, order }`      | Sort applied      |
-| `expand`          | `any`                   | Row expanded      |
-| `reorder`         | `any[]`                 | Rows reordered    |
-| `columnsReorder`  | `ColumnDef[]`           | Columns reordered |
+| Event             | Payload                                                    | Description                                      |
+| ----------------- | ---------------------------------------------------------- | ------------------------------------------------ |
+| `rowClick`        | `{ row: any, index: number }`                              | Row clicked (not fired when `expandableRow=true`) |
+| `selection`       | `any[]`                                                    | Array of selected row objects after change       |
+| `paginatorChange` | `{ currentPage: number }` or full paginator payload        | Page changed                                     |
+| `sort`            | `{ orderBy: string, sortBy: 'asc' \| 'desc' }`             | Sort applied — **`orderBy`/`sortBy`**, not `field`/`order` |
+| `expand`          | `number \| null`                                           | Expanded row ID (dataKey value), or `null` when collapsed |
+| `reorder`         | `any[]`                                                    | Full data array in new order after drag          |
+| `columnsReorder`  | `ColumnDef[]`                                              | Full columns array in new order after drag       |
 
 ```tsx
-// React — render must return JSX, never an HTML string
+// React
 const columns = [
   { field: "name", header: "Name", sortable: true },
   { field: "email", header: "Email" },
   {
-    field: "status",
     header: "Status",
     render: (row) => (
-      <MsBadge
-        value={row.status}
-        severity={row.active ? "success" : "danger"}
-      />
+      <MsBadge value={row.status} severity={row.active ? "success" : "danger"} />
     ),
   },
 ];
@@ -1869,13 +2565,16 @@ const columns = [
 <MsTable
   columns={columns}
   data={users}
+  dataKey="id"
   selectionRow
   paginator
   rowsPerPage={20}
   totalRecords={users.length}
   stickyHeader
+  scrollerHeight="500px"
   onSelection={(e) => setSelectedUsers(e.detail)}
-  onRowClick={(e) => console.log("Row:", e.detail)}
+  onRowClick={(e) => console.log(e.detail.row, e.detail.index)}
+  onSort={(e) => fetchSorted(e.detail.orderBy, e.detail.sortBy)}
 />;
 ```
 
@@ -1883,14 +2582,16 @@ const columns = [
 
 #### `ms-inplace`
 
-In-place editing: shows text and switches to edit mode on click.
+In-place editing: shows a display view and switches to edit mode on click. **`shadow: true`** — CSS inside the component is encapsulated.
 
-| Prop          | Type      | Default | Description                           |
-| ------------- | --------- | ------- | ------------------------------------- |
-| `active`      | `boolean` | `false` | Whether edit mode is active           |
-| `closable`    | `boolean` | `false` | Show a close button to exit edit mode |
-| `disabled`    | `boolean` | `false` | Disable interaction                   |
-| `customClass` | `string`  | `''`    | Extra CSS class                       |
+| Prop          | Type      | Default | Description                                               |
+| ------------- | --------- | ------- | --------------------------------------------------------- |
+| `active`      | `boolean` | `false` | Controls edit mode. Reactive: `@Watch` syncs on change   |
+| `closable`    | `boolean` | `false` | Show a close button (only visible when in edit mode)      |
+| `disabled`    | `boolean` | `false` | Disables all interaction; display slot becomes inert      |
+| `customClass` | `string`  | `''`    | Extra CSS class on the host element                       |
+
+> `active` is a controlled prop — changing it externally (e.g. `el.active = true`) updates the internal state via `@Watch`.
 
 **Events:**
 
@@ -1898,12 +2599,17 @@ In-place editing: shows text and switches to edit mode on click.
 | ---------- | --------- | ------------------------------------ |
 | `msOpen`   | `void`    | Switched to edit mode                |
 | `msClose`  | `void`    | Switched back to display mode        |
-| `msToggle` | `boolean` | Toggled; emits `true` when edit mode |
+| `msToggle` | `boolean` | Emits `true` on open, `false` on close |
 
-**Slots:** `display` (read mode) | `content` (edit mode)
+**Slots:**
+
+| Slot      | Description                                                                         |
+| --------- | ----------------------------------------------------------------------------------- |
+| `display` | Read-mode content. Fallback text: `"Clic para editar"`. Keyboard: Enter/Space open |
+| `content` | Edit-mode content. Shown when active. Close button appended if `closable=true`     |
 
 ```html
-<ms-inplace>
+<ms-inplace closable>
   <span slot="display">Click to edit</span>
   <ms-input-field slot="content" placeholder="Edit value"></ms-input-field>
 </ms-inplace>
@@ -1915,6 +2621,7 @@ In-place editing: shows text and switches to edit mode on click.
   closable
   onMsOpen={() => console.log("editing")}
   onMsClose={() => console.log("done")}
+  onMsToggle={(e) => setEditing(e.detail)}
 >
   <span slot="display">Click to edit</span>
   <MsInputField slot="content" placeholder="Edit value" />
@@ -1925,21 +2632,27 @@ In-place editing: shows text and switches to edit mode on click.
 
 #### `ms-text-editor`
 
-Rich text editor (WYSIWYG).
+Rich text editor (WYSIWYG). `shadow: true` — external CSS does not penetrate.
 
-| Prop          | Type      | Default                       | Description            |
-| ------------- | --------- | ----------------------------- | ---------------------- |
-| `value`       | `string`  | `''`                          | Current HTML content   |
-| `placeholder` | `string`  | `'Type your content here...'` | Placeholder when empty |
-| `readonly`    | `boolean` | `false`                       | Read-only mode         |
+| Prop          | Type      | Default                       | Description                                              |
+| ------------- | --------- | ----------------------------- | -------------------------------------------------------- |
+| `value`       | `string`  | `''`                          | Current HTML content. Reactive via `@Watch` — updating the prop replaces the editor content |
+| `placeholder` | `string`  | `'Type your content here...'` | Placeholder shown when editor is empty                   |
+| `readonly`    | `boolean` | `false`                       | Read-only mode — toolbar is disabled, editing blocked    |
 
-> **Note:** there is no `formats` prop. Toolbar formats are built-in.
+**Built-in toolbar formats:** Bold · Italic · Underline · Unordered list · Ordered list. No additional formats configurable.
+
+> **Paste sanitization:** pasted content is cleaned to allowed tags only: `P`, `STRONG`, `B`, `EM`, `I`, `U`, `UL`, `OL`, `LI`, `BR`, `DIV`, `SPAN`. Font colors, sizes, images, tables, and links are stripped.
+
+> **Empty content:** when the editor is cleared, `textChange` emits `''` (empty string), not `<p><br></p>`.
+
+> **Implementation note:** uses deprecated `document.execCommand` API internally.
 
 **Events:**
 
-| Event        | Payload  | Description                                      |
-| ------------ | -------- | ------------------------------------------------ |
-| `textChange` | `string` | Emitted on every edit; detail is the HTML string |
+| Event        | Payload  | Description                                                   |
+| ------------ | -------- | ------------------------------------------------------------- |
+| `textChange` | `string` | Emitted on every edit and on blur; detail is the HTML string  |
 
 ```tsx
 // React
@@ -1954,29 +2667,142 @@ Rich text editor (WYSIWYG).
 
 #### `ms-popover`
 
-Floating container that appears on click/hover over a trigger.
+Floating content panel that opens on click, hover, or focus. State is fully internal — **no `visible` prop, no events**. `shadow: false` — external CSS penetrates.
 
-| Prop          | Type                                     | Default    | Description                  |
-| ------------- | ---------------------------------------- | ---------- | ---------------------------- |
-| `visible`     | `boolean`                                | `false`    | Show/hide                    |
-| `position`    | `'top' \| 'bottom' \| 'left' \| 'right'` | `'bottom'` | Position relative to trigger |
-| `showArrow`   | `boolean`                                | `true`     | Show arrow indicator         |
-| `dismissable` | `boolean`                                | `true`     | Closes on outside click      |
+| Prop            | Type                                     | Default    | Description                                       |
+| --------------- | ---------------------------------------- | ---------- | ------------------------------------------------- |
+| `placement`     | `'top' \| 'bottom' \| 'left' \| 'right'` | `'bottom'` | Preferred position relative to the trigger        |
+| `trigger`       | `'click' \| 'hover' \| 'focus'`          | `'click'`  | Interaction that opens the popover                |
+| `dismissable`   | `boolean`                                | `true`     | Close on outside click                            |
+| `closeOnEscape` | `boolean`                                | `true`     | Close on Escape key                               |
+| `showCloseIcon` | `boolean`                                | `false`    | Show an × button inside the popover               |
+| `customClass`   | `string`                                 | `''`       | Extra CSS class on the wrapper element            |
 
-**Slot:** default — popover content.
+> **No `visible` prop and no events.** Open/close state is internal-only. There is no way to programmatically control the popover from outside.
+
+> **Auto-flip:** if the preferred `placement` doesn't fit the viewport, tries the opposite side, then `bottom`, then `top` as a final fallback.
+
+> **`trigger='hover'`:** closing is delayed 100 ms after mouseleave. Moving the pointer from the trigger into the popover content cancels the close timeout, keeping it open.
+
+**Slots:**
+
+| Slot      | Description                                        |
+| --------- | -------------------------------------------------- |
+| `trigger` | The element that triggers the popover (required)   |
+| default   | The popover content                                |
+
+```tsx
+// React — click trigger (default)
+<MsPopover placement="bottom">
+  <button slot="trigger">More info</button>
+  <div>
+    <p>Popover content here.</p>
+  </div>
+</MsPopover>
+
+// React — hover trigger with close icon
+<MsPopover trigger="hover" placement="top" showCloseIcon>
+  <MsIcon slot="trigger" name="info" />
+  <span>Tooltip-style content</span>
+</MsPopover>
+```
 
 ---
 
 #### `ms-menubar`
 
-Horizontal menu bar (desktop application-style).
+Horizontal navigation bar. Responsive: horizontal items on desktop, hamburger + slide-in drawer on mobile (≤ 768px). `shadow: false`. **No events** — navigation handled via `item.url` or `item.action`.
 
-| Prop         | Type         | Default | Description    |
-| ------------ | ------------ | ------- | -------------- |
-| `model`      | `MenuItem[]` | `[]`    | Menu structure |
-| `activeItem` | `string`     | —       | Active item ID |
+| Prop               | Type                    | Default | Description                                                       |
+| ------------------ | ----------------------- | ------- | ----------------------------------------------------------------- |
+| `items`            | `MenubarItem[] \| string` | `[]`  | Menu items. **JS array** or **JSON string** via HTML attribute    |
+| `menuActiveItemId` | `string`                | `''`    | Initial active item/sub-item `id` — resolved on component load    |
+| `customClass`      | `string`                | `''`    | Extra CSS class on the wrapper `div`                              |
+| `cascadeMenuClass` | `string`                | `''`    | CSS class forwarded to each `ms-cascade-menu` dropdown            |
 
-**Events:** `itemClick` — item clicked.
+**Slots:**
+
+| Slot    | Description                                              |
+| ------- | -------------------------------------------------------- |
+| `start` | Content before the menu items (e.g., logo)               |
+| `end`   | Content after the menu items (e.g., user icon, search)   |
+
+**Item types (determined by shape of `MenubarItem`):**
+- Item **with `menuData`** → renders as `ms-cascade-menu` trigger (dropdown on desktop, accordion in drawer on mobile)
+- Item **without `menuData`** → renders as `<a>` link
+
+**Navigation (no events):**
+- `item.url` set and not `'#'` → `window.location.href = item.url` on click
+- `item.action` set → called with a `CustomEvent` containing `{ id, label, icon, url, disabled, customClass, menuData, minWidth, originalEvent }`
+- `item.disabled = true` → click is suppressed
+
+**Responsive behavior:**
+- Desktop (`> 768px`): standard horizontal bar
+- Mobile (`≤ 768px`): items hidden, hamburger appears; click opens a full-width drawer
+- Escape closes mobile menu; click outside also closes it
+- Breakpoint is **not configurable**
+
+**`MenubarItem` interface:**
+```ts
+interface MenubarItem {
+  label: string;           // required — bar button text
+  id?: string;             // used for active state tracking
+  url?: string;            // navigation target
+  action?: (event: Event) => void; // JS callback (takes precedence over url)
+  icon?: string;           // SVG HTML string OR CSS class (e.g. 'pi pi-home')
+  menuData?: CascadeMenuItem[]; // sub-items → renders as dropdown
+  minWidth?: string;       // min-width forwarded to ms-cascade-menu
+  width?: string;
+  customClass?: string;
+  disabled?: boolean;
+}
+```
+
+**`CascadeMenuItem` interface (sub-items inside `menuData`):**
+```ts
+interface CascadeMenuItem {
+  text?: string;
+  id?: string;
+  url?: string;
+  action?: (event: Event) => void;
+  icon?: string;
+  type?: 'divider' | 'item';  // 'divider' renders a separator line
+  children?: CascadeMenuItem[];
+  disabled?: boolean;
+  minWidth?: string;
+  width?: string;
+}
+```
+
+```js
+// Vanilla — items as JSON string attribute
+const items = JSON.stringify([
+  { label: 'Home', url: '/home', id: 'home' },
+  { label: 'Reports', menuData: [
+    { text: 'Monthly', url: '/reports/monthly', id: 'monthly' },
+    { type: 'divider' },
+    { text: 'Annual', url: '/reports/annual', id: 'annual' },
+  ]},
+]);
+document.querySelector('ms-menubar').setAttribute('items', items);
+```
+
+```tsx
+// React — items as JS array
+const items: MenubarItem[] = [
+  { label: 'Home', url: '/home', id: 'home' },
+  { label: 'Reports', menuData: [
+    { text: 'Monthly', url: '/reports/monthly', id: 'monthly' },
+    { type: 'divider' },
+    { text: 'Annual', url: '/reports/annual', id: 'annual' },
+  ]},
+];
+
+<MsMenubar items={items} menuActiveItemId="home">
+  <img slot="start" src="/logo.svg" />
+  <MsButton slot="end" label="Logout" />
+</MsMenubar>
+```
 
 ---
 
@@ -1986,56 +2812,104 @@ Horizontal menu bar (desktop application-style).
 
 #### `ms-progress-bar`
 
-Progress bar.
+Progress bar. `shadow: true` — external CSS does not penetrate; use CSS custom properties for theming.
 
-| Prop        | Type                               | Default         | Description          |
-| ----------- | ---------------------------------- | --------------- | -------------------- |
-| `value`     | `number`                           | `0`             | Percentage (0–100)   |
-| `mode`      | `'determinate' \| 'indeterminate'` | `'determinate'` | Mode                 |
-| `showValue` | `boolean`                          | `true`          | Show percentage text |
-| `color`     | `string`                           | —               | Bar color            |
+| Prop                    | Type                               | Default         | Description                                                            |
+| ----------------------- | ---------------------------------- | --------------- | ---------------------------------------------------------------------- |
+| `mode`                  | `'determinate' \| 'indeterminate'` | `'determinate'` | `indeterminate` shows an animated bar and ignores `value`              |
+| `value`                 | `number`                           | `undefined`     | Progress value; clamped to 0–100. If not set, no label is shown.       |
+| `unit`                  | `string`                           | `'%'`           | Unit suffix appended to the value label (e.g. `'%'`, `'px'`, `' of 10'`) |
+| `displayValueTemplate`  | `(value: number) => string \| any` | `undefined`     | Custom label renderer. Receives clamped value. String → rendered as `innerHTML`; JSX node → rendered directly. |
+
+> **No `showValue` prop, no `color` prop.** Label visibility is controlled by whether `value` is set (not by a boolean prop). Bar color is set via CSS custom properties.
+
+**Label rendering priority (determinate mode only):**
+1. `displayValueTemplate` set → custom renderer
+2. Default slot children present (detected at load) → slot content
+3. `value` is not `null`/`undefined` → `"{value}{unit}"` (e.g. `"75%"`)
+4. None of the above → no label rendered
 
 ```html
+<!-- Basic -->
 <ms-progress-bar value="75"></ms-progress-bar>
+
+<!-- Custom unit -->
+<ms-progress-bar value="3" unit=" of 10"></ms-progress-bar>
+
+<!-- Indeterminate -->
 <ms-progress-bar mode="indeterminate"></ms-progress-bar>
+```
+
+```tsx
+// React — custom template
+<MsProgressBar
+  value={progress}
+  displayValueTemplate={(v) => `<strong>${v}%</strong> complete`}
+/>
 ```
 
 ---
 
 #### `ms-timeline`
 
-Timeline event visualization.
+Timeline event visualization. Slot-based — event content is provided via named slots, not data props. `shadow: false` — external CSS penetrates.
 
-| Prop     | Type                               | Default      | Description       |
-| -------- | ---------------------------------- | ------------ | ----------------- |
-| `value`  | `TimelineItem[]`                   | `[]`         | Timeline events   |
-| `align`  | `'left' \| 'right' \| 'alternate'` | `'left'`     | Content alignment |
-| `layout` | `'vertical' \| 'horizontal'`       | `'vertical'` | Orientation       |
+| Prop          | Type                                      | Default  | Description                                                                 |
+| ------------- | ----------------------------------------- | -------- | --------------------------------------------------------------------------- |
+| `events`      | `any[]`                                   | `[]`     | Array used **only to determine the number of events** — item properties are ignored; use length to control how many slots are created |
+| `align`       | `'left' \| 'right' \| 'alternate'`        | `'left'` | Layout alignment of event content                                           |
+| `class`       | `string \| null`                          | `null`   | Extra CSS class on the container                                            |
+| `idComponent` | `string`                                  | `''`     | HTML `id` prefix                                                            |
 
-**`TimelineItem`:**
+> **No `value` prop, no `layout` prop, no `TimelineItem` interface.** The `events` array items are never read — their properties have no effect. Pass an array of any length to create that many timeline slots.
 
-```typescript
-interface TimelineItem {
-  status?: string;
-  date?: string;
-  icon?: string;
-  color?: string;
-  content?: string;
-  opposite?: string; // content on the opposite side
-}
+> **`alternate` align:** renders an additional empty `ms-timeline-event-opposite` div for each event (CSS handles the two-column layout).
+
+**Slots:** `event-{n}` — content for event at index n (zero-based). Each slot is rendered inside `ms-timeline-event-content`.
+
+```html
+<!-- Vanilla — 3 events via slots -->
+<ms-timeline events='[{},{},{}]' align="left">
+  <div slot="event-0">
+    <strong>Step 1</strong>
+    <p>Order placed</p>
+  </div>
+  <div slot="event-1">
+    <strong>Step 2</strong>
+    <p>Shipped</p>
+  </div>
+  <div slot="event-2">
+    <strong>Step 3</strong>
+    <p>Delivered</p>
+  </div>
+</ms-timeline>
+```
+
+```tsx
+// React
+const events = [{}, {}, {}]; // length = 3 slots; item content is irrelevant
+
+<MsTimeline events={events} align="alternate">
+  <div slot="event-0"><strong>2024-01</strong> — Project started</div>
+  <div slot="event-1"><strong>2024-06</strong> — Beta launched</div>
+  <div slot="event-2"><strong>2024-12</strong> — v1.0 released</div>
+</MsTimeline>
 ```
 
 ---
 
 #### `ms-tooltip`
 
-Tooltip on hover.
+Tooltip on hover. `shadow: false` — external CSS penetrates.
 
-| Prop          | Type                                     | Default | Description                  |
-| ------------- | ---------------------------------------- | ------- | ---------------------------- |
-| `content`     | `string`                                 | —       | Tooltip HTML content         |
-| `position`    | `'top' \| 'bottom' \| 'left' \| 'right'` | `'top'` | Position relative to trigger |
-| `showContent` | `boolean`                                | `true`  | Enable/disable               |
+| Prop          | Type                                     | Default | Description                                                   |
+| ------------- | ---------------------------------------- | ------- | ------------------------------------------------------------- |
+| `content`     | `string`                                 | `''`    | Tooltip content rendered as `innerHTML` — supports HTML tags  |
+| `position`    | `'top' \| 'bottom' \| 'left' \| 'right'` | `'top'` | Position relative to the slotted trigger                      |
+| `showContent` | `boolean`                                | `true`  | Set to `false` to disable the tooltip entirely                |
+| `class`       | `string \| null` (mutable)               | `null`  | Extra CSS class on the tooltip bubble element                 |
+
+> **Hover only — no click, no focus, no delay.** Shows on `mouseenter`, hides immediately on `mouseleave`.
 
 **Slot:** default — element that triggers the tooltip.
 
@@ -2043,23 +2917,28 @@ Tooltip on hover.
 <ms-tooltip content="Delete record" position="top">
   <ms-button label="" icon="delete" variant="text"></ms-button>
 </ms-tooltip>
+
+<!-- HTML content supported -->
+<ms-tooltip content="<strong>Warning:</strong> This action is irreversible" position="bottom">
+  <ms-icon name="warning"></ms-icon>
+</ms-tooltip>
 ```
 
 ---
 
 #### `ms-meter-group`
 
-Group of meters/gauges for displaying comparative metrics.
+Group of meters/gauges for displaying comparative metrics. `shadow: true` — external CSS does not penetrate.
 
 | Prop               | Type                         | Default        | Description                                    |
 | ------------------ | ---------------------------- | -------------- | ---------------------------------------------- |
-| `values`           | `MeterValue[] \| string`     | `[]`           | Meter data — **`values`, not `value`**         |
+| `values`           | `MeterValue[] \| string`     | `[]`           | Meter data — **`values`, not `value`**. Pass JS array or JSON string for HTML attribute. |
 | `min`              | `number`                     | `0`            | Minimum value                                  |
 | `max`              | `number`                     | `100`          | Maximum value                                  |
 | `orientation`      | `'horizontal' \| 'vertical'` | `'horizontal'` | Bar orientation                                |
 | `labelOrientation` | `'horizontal' \| 'vertical'` | `'horizontal'` | Label layout orientation                       |
 | `labelPosition`    | `'start' \| 'end'`           | `'end'`        | Whether labels appear before or after the bars |
-| `customClass`      | `string`                     | `''`           | Extra CSS class                                |
+| `customClass`      | `string`                     | `''`           | Extra CSS class applied on the Host element    |
 
 **`MeterValue` interface:**
 
@@ -2067,12 +2946,14 @@ Group of meters/gauges for displaying comparative metrics.
 interface MeterValue {
   label: string;
   value: number;
-  color?: string;
-  icon?: string;
+  color: string;   // required — used as backgroundColor on the bar
+  icon?: string;   // URL; if present shows a mask-image icon; if absent shows a colored dot
 }
 ```
 
-**Slots:** `labelList` | `start` | `end`
+> **Label value display:** the built-in label list renders `{value}%` — the `%` suffix is hardcoded. If your values are not percentages, override via the `labelList` slot.
+
+**Slots:** `labelList` (replaces built-in legend entirely) | `start` (before content) | `end` (after content)
 
 ```tsx
 // React
@@ -2092,47 +2973,65 @@ const data: MeterValue[] = [
 
 #### `ms-fieldset`
 
-HTML fieldset with legend and optional toggle (collapse).
+HTML fieldset with legend and optional collapse. Uses **`shadow: true`** — CSS encapsulated.
 
-| Prop         | Type      | Default | Description         |
-| ------------ | --------- | ------- | ------------------- |
-| `legend`     | `string`  | —       | Legend text         |
-| `toggleable` | `boolean` | `false` | Allow collapsing    |
-| `collapsed`  | `boolean` | `false` | Initially collapsed |
+| Prop          | Attribute      | Type      | Default | Description                                          |
+| ------------- | -------------- | --------- | ------- | ---------------------------------------------------- |
+| `legend`      | `legend`       | `string`  | `''`    | Legend text; if omitted, use `slot="legend"` instead |
+| `toggleable`  | `toggleable`   | `boolean` | `false` | Makes the legend a button that collapses the content |
+| `customClass` | `custom-class` | `string`  | `''`    | Extra CSS class on the inner `<fieldset>` element    |
 
-**Events:** `toggle` — state changed.
+> **No `collapsed` prop and no `toggle` event.** The collapsed state is internal-only (`@State`), always starting expanded. There is no way to control or read the collapsed state from outside.
+
+**Slots:** default (fieldset content) | `legend` (rich legend content, e.g. with icon)
+
+```tsx
+// React — simple
+<MsFieldset legend="Personal Information">
+  <MsInputField label="Name" />
+  <MsInputField label="Email" />
+</MsFieldset>
+
+// React — toggleable with rich legend via slot
+<MsFieldset toggleable>
+  <span slot="legend"><MsIcon name="user" /> Personal Information</span>
+  <MsInputField label="Name" />
+</MsFieldset>
+```
 
 ---
 
 #### `ms-paginator`
 
-Standalone pagination control (also used internally by `ms-table`).
+Standalone pagination control (also used internally by `ms-table`). `shadow: false` — external CSS penetrates.
 
 | Prop                  | Type      | Default | Description                  |
 | --------------------- | --------- | ------- | ---------------------------- |
-| `first`               | `number`  | `0`     | First record index           |
-| `currentPage`         | `number`  | `1`     | Current page                 |
-| `rows`                | `number`  | `10`    | Records per page             |
-| `totalRecords`        | `number`  | `0`     | Total record count           |
-| `pageLinkSize`        | `number`  | `5`     | Number of visible page links |
-| `rowsPerPageOptions`  | `Item[]`  | `[]`    | Rows per page options        |
-| `showPerPageDropdown` | `boolean` | `false` | Show rows per page selector  |
+| `class`               | `string`  | `undefined` | Extra CSS class on the container |
+| `first`               | `number` (mutable) | `0` | Index of the first record on the current page |
+| `currentPage`         | `number` (mutable) | `0`     | **0-based** current page index |
+| `rows`                | `number` (mutable) | `10`    | Records per page             |
+| `pageLinkSize`        | `number` (mutable) | `5`     | Number of visible page links (capped to 3 on mobile `≤ 480px`) |
+| `totalRecords`        | `number`  | `undefined` | Total record count (required for pagination to work) |
+| `rowsPerPageOptions`  | `Item[]`  | `[{label:'10',value:10},{label:'20',value:20},{label:'30',value:30}]` | Options for rows-per-page dropdown |
+| `showPerPageDropdown` | `boolean` | `true`  | Show rows-per-page `ms-dropdown` |
 
-**Events:** `pageChange` — emits `{ first, rows, page }`.
+> **Pages are 0-indexed.** Pass `currentPage={0}` for page 1, `currentPage={1}` for page 2, etc. The UI displays page numbers as 1-based.
+
+> **Changing `rows`** resets `currentPage` and `first` to `0` automatically and emits `pageChange`.
+
+> **Project convention:** always set `showPerPageDropdown={false}`. The component default is `true` but this project does not use the rows-per-page selector.
+
+**Events:** `pageChange` — emits `{ first: number, rows: number, currentPage: number, totalRecords: number }`.
 
 ```tsx
 // React
 <MsPaginator
   totalRecords={1000}
   rows={rowsPerPage}
-  currentPage={currentPage}
-  rowsPerPageOptions={[
-    { label: "10", value: 10 },
-    { label: "25", value: 25 },
-  ]}
-  showPerPageDropdown
+  currentPage={currentPage}   // 0-based: page 1 = 0, page 2 = 1, ...
   onPageChange={(e) => {
-    setCurrentPage(e.detail.page);
+    setCurrentPage(e.detail.currentPage);  // NOT e.detail.page
     setRowsPerPage(e.detail.rows);
   }}
 />
@@ -2142,12 +3041,12 @@ Standalone pagination control (also used internally by `ms-table`).
 
 #### `ms-preload`
 
-Loading overlay that covers a container. Always visible when rendered — control it with conditional rendering in your framework.
+Loading overlay that covers a container. Always visible when rendered — control it with conditional rendering in your framework. `shadow: false` — external CSS penetrates.
 
-| Prop    | Type     | Default | Description                               |
-| ------- | -------- | ------- | ----------------------------------------- |
-| `text`  | `string` | —       | Text shown below the loading animation    |
-| `image` | `string` | —       | URL of a custom image/logo above the text |
+| Prop    | Type     | Default | Description                                                                                          |
+| ------- | -------- | ------- | ---------------------------------------------------------------------------------------------------- |
+| `text`  | `string` | —       | Text shown in the overlay. Ignored if `image` is set. If neither is set, shows `"Loading..."`.       |
+| `image` | `string` | —       | URL of a custom image (rendered at 450px wide). **Takes precedence over `text`** — both cannot show at once. |
 
 > **No `visible`, `fullscreen`, or `zIndex` props.** Use conditional rendering to show/hide the overlay, and CSS (`position: fixed`) to cover the full screen.
 
@@ -2171,45 +3070,51 @@ Loading overlay that covers a container. Always visible when rendered — contro
 
 #### `ms-web-card`
 
-Card container with header, body and footer slots.
+Card container with header, body and footer. `shadow: false` — external CSS penetrates.
 
-> **React import name:** `MsCard` (the styleguide re-exports it under this alias).
+> **HTML tag is `ms-card`** (not `ms-web-card` — that is the file name only).
 >
+> **React import name:** `MsCard` (the styleguide re-exports it under this alias).
 > ```tsx
 > import { MsCard } from "@maxi/styleguide";
 > ```
 
-| Prop             | Type             | Default | Description                                             |
-| ---------------- | ---------------- | ------- | ------------------------------------------------------- |
-| `idComponent`    | `string \| null` | `null`  | HTML `id` for the card element                          |
-| `titleComponent` | `string \| null` | `null`  | Card title text — **use `titleComponent`, not `title`** |
-| `subTitle`       | `string \| null` | `null`  | Subtitle text                                           |
-| `isFramework`    | `boolean`        | `true`  | Internal flag; leave as default                         |
+| Prop             | Type             | Default     | Description                                                              |
+| ---------------- | ---------------- | ----------- | ------------------------------------------------------------------------ |
+| `titleComponent` | `string \| null` | `null`      | Card title text — **use `titleComponent`, not `title`**                  |
+| `subTitle`       | `string \| null` | `null`      | Subtitle text                                                            |
+| `header`         | `string \| any`  | `undefined` | Header content as string or JSX. If set, the `header` slot is ignored   |
+| `footer`         | `string \| any`  | `undefined` | Footer content as string or JSX. If set, the `footer` slot is ignored   |
+| `class`          | `string \| null` | `null`      | Extra CSS class on the outer container div                               |
+| `idComponent`    | `string \| null` | `null`      | Declared but **not applied in the render** — has no effect               |
+| `isFramework`    | `boolean`        | `true`      | Internal flag; leave as default                                          |
 
-> **Warning:** the prop is `titleComponent`, not `title`. Using `title` will set the native HTML `title` attribute (tooltip) instead.
+> **Warning:** the prop is `titleComponent`, not `title`. Using `title` sets the native HTML tooltip attribute instead.
+
+> **Prop vs slot precedence:** if a prop (`header`, `titleComponent`, `subTitle`, `footer`) is set, its corresponding named slot is ignored. Use the prop **or** the slot, not both.
 
 **Slots:**
 
-| Slot             | Description                     |
-| ---------------- | ------------------------------- |
-| `header`         | Custom header content           |
-| `titleComponent` | Custom title (replaces prop)    |
-| `subTitle`       | Custom subtitle (replaces prop) |
-| default          | Body content                    |
-| `footer`         | Footer content                  |
+| Slot             | Description                                              |
+| ---------------- | -------------------------------------------------------- |
+| `header`         | Custom header content (ignored if `header` prop is set)  |
+| `titleComponent` | Custom title (ignored if `titleComponent` prop is set)   |
+| `subTitle`       | Custom subtitle (ignored if `subTitle` prop is set)      |
+| default          | Body content                                             |
+| `footer`         | Footer content (ignored if `footer` prop is set)         |
 
 ```html
-<!-- Vanilla -->
-<ms-web-card title-component="Sales summary" sub-title="Current month">
+<!-- Vanilla — tag is ms-card -->
+<ms-card title-component="Sales summary" sub-title="Current month">
   <p>Total sales: $12,400</p>
   <div slot="footer">
     <ms-button label="View details" variant="text"></ms-button>
   </div>
-</ms-web-card>
+</ms-card>
 ```
 
 ```tsx
-// React — use MsCard (alias registered in the styleguide)
+// React — use MsCard alias
 <MsCard titleComponent="Sales summary" subTitle="Current month">
   <p>Total sales: $12,400</p>
   <div slot="footer">
@@ -2226,60 +3131,67 @@ Card container with header, body and footer slots.
 
 #### `ms-file-upload`
 
-File upload component with drag-and-drop, validation, progress tracking and custom upload handling.
+File upload with drag-and-drop, validation, progress tracking, and custom upload handling. `shadow: false`.
 
-| Prop                            | Type                                                             | Default                         | Description                                                                                 |
-| ------------------------------- | ---------------------------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------- |
-| `mode`                          | `'basic' \| 'advanced'`                                          | `'advanced'`                    | `'basic'` shows a single choose button; `'advanced'` shows the full dropzone with file list |
-| `multiple`                      | `boolean`                                                        | `false`                         | Allow selecting multiple files                                                              |
-| `accept`                        | `string`                                                         | —                               | MIME types or extensions allowed (e.g. `'image/*,.pdf'`)                                    |
-| `maxFileSize`                   | `number`                                                         | —                               | Maximum file size in bytes                                                                  |
-| `url`                           | `string`                                                         | —                               | Upload endpoint URL (XHR POST)                                                              |
-| `auto`                          | `boolean`                                                        | `false`                         | Upload automatically on file selection                                                      |
-| `customUpload`                  | `boolean`                                                        | `false`                         | Skip XHR and emit `uploadHandlerEvent` for manual handling                                  |
-| `name`                          | `string`                                                         | —                               | Form field name sent in the multipart request                                               |
-| `withCredentials`               | `boolean`                                                        | `false`                         | Include cookies in the XHR request                                                          |
-| `chooseLabel`                   | `string`                                                         | `'Choose'`                      | Label for the choose-file button                                                            |
-| `uploadLabel`                   | `string`                                                         | `'Upload'`                      | Label for the upload button                                                                 |
-| `cancelLabel`                   | `string`                                                         | `'Cancel'`                      | Label for the cancel button                                                                 |
-| `addLabel`                      | `string`                                                         | `'Add File'`                    | Label shown in dropzone                                                                     |
-| `browseLabel`                   | `string`                                                         | `'browse file'`                 | Inline link in the dropzone text                                                            |
-| `dropLabel`                     | `string`                                                         | `'Drag and drop files here'`    | Dropzone instruction text                                                                   |
-| `previewWidth`                  | `number`                                                         | `50`                            | Preview thumbnail width in px                                                               |
-| `variant`                       | `'primary' \| 'secondary' \| 'success' \| 'warning' \| 'alert'`  | `'primary'`                     | Button color variant                                                                        |
-| `buttonsPosition`               | `'top' \| 'right' \| 'left' \| 'bottom-center' \| 'bottom-left'` | —                               | Position of the action buttons                                                              |
-| `disabled`                      | `boolean`                                                        | `false`                         | Disable all interactions                                                                    |
-| `invalidFileSizeMessageSummary` | `string`                                                         | `'Invalid file size'`           | Toast summary for size errors                                                               |
-| `invalidFileSizeMessageDetail`  | `string`                                                         | `'Maximum upload size is {0}.'` | Toast detail for size errors (`{0}` = formatted size)                                       |
+**Three render modes** (determined by `mode` + `buttonsPosition`):
+- `mode='basic'` → single choose button only
+- `mode='advanced'` + no `buttonsPosition` → full dropzone with separate buttonbar above
+- `mode='advanced'` + `buttonsPosition` set → drag-zone layout with buttons at the specified position
+
+| Prop                            | Attribute                             | Type                                                             | Default                         | Description                                                          |
+| ------------------------------- | ------------------------------------- | ---------------------------------------------------------------- | ------------------------------- | -------------------------------------------------------------------- |
+| `mode`                          | `mode`                                | `'basic' \| 'advanced'`                                          | `'advanced'`                    | UI mode — see render modes above                                     |
+| `buttonsPosition`               | `buttons-position`                    | `'top'\|'right'\|'left'\|'bottom-center'\|'bottom-left'`        | —                               | When set, activates drag-zone layout and positions Cancel/Upload here |
+| `multiple`                      | `multiple`                            | `boolean`                                                        | `false`                         | Allow selecting multiple files                                       |
+| `accept`                        | `accept`                              | `string`                                                         | —                               | MIME types or extensions allowed (e.g. `'image/*,.pdf'`)             |
+| `maxFileSize`                   | `max-file-size`                       | `number`                                                         | —                               | Maximum file size in bytes; over-limit files emit `validationFailEvent` |
+| `url`                           | `url`                                 | `string`                                                         | —                               | Upload endpoint (XHR POST); required when `customUpload=false`       |
+| `auto`                          | `auto`                                | `boolean`                                                        | `false`                         | Upload automatically on file selection                               |
+| `customUpload`                  | `custom-upload`                       | `boolean`                                                        | `false`                         | Skip XHR and emit `uploadHandlerEvent` for manual handling           |
+| `name`                          | `name`                                | `string`                                                         | —                               | Form field name sent in multipart request (default: `'file'`)        |
+| `withCredentials`               | `with-credentials`                    | `boolean`                                                        | `false`                         | Include cookies in XHR request                                       |
+| `disabled`                      | `disabled`                            | `boolean`                                                        | `false`                         | Disable all interactions                                             |
+| `variant`                       | `variant`                             | `'primary'\|'secondary'\|'success'\|'warning'\|'alert'`         | `'primary'`                     | Button color variant                                                 |
+| `previewWidth`                  | `preview-width`                       | `number`                                                         | `50`                            | Image thumbnail width in px                                          |
+| `chooseLabel`                   | `choose-label`                        | `string`                                                         | `'Choose'`                      | Label for the choose-file button                                     |
+| `uploadLabel`                   | `upload-label`                        | `string`                                                         | `'Upload'`                      | Label for the upload button                                          |
+| `cancelLabel`                   | `cancel-label`                        | `string`                                                         | `'Cancel'`                      | Label for the cancel button                                          |
+| `dropLabel`                     | `drop-label`                          | `string`                                                         | `'Drag and drop files here'`    | Dropzone instruction text                                            |
+| `addLabel`                      | `add-label`                           | `string`                                                         | `'Add File'`                    | Heading in empty drag-zone drop area                                 |
+| `browseLabel`                   | `browse-label`                        | `string`                                                         | `'browse file'`                 | Clickable browse link text in drag-zone                              |
+| `invalidFileSizeMessageSummary` | `invalid-file-size-message-summary`   | `string`                                                         | `'Invalid file size'`           | Label for consumer to use in validation error notification           |
+| `invalidFileSizeMessageDetail`  | `invalid-file-size-message-detail`    | `string`                                                         | `'Maximum upload size is {0}.'` | Detail label (`{0}` = formatted size) — component does **not** display this automatically; use it in `onValidationFailEvent` |
 
 **Events:**
 
 | Event                 | Payload                                              | Description                                               |
 | --------------------- | ---------------------------------------------------- | --------------------------------------------------------- |
-| `selectEvent`         | `{ files: File[], originalEvent: Event }`            | Files selected                                            |
-| `beforeSelectEvent`   | `{ files: File[], originalEvent: Event }`            | Before files are selected                                 |
+| `selectEvent`         | `{ files: File[], originalEvent: Event }`            | Files selected (after validation pass)                    |
+| `beforeSelectEvent`   | `{ files: File[], originalEvent: Event }`            | Before files are added to the queue                       |
 | `uploadEvent`         | `{ files: File[], xhr: XMLHttpRequest }`             | Upload completed successfully                             |
-| `errorEvent`          | `{ files: File[], xhr: XMLHttpRequest }`             | Upload failed                                             |
+| `errorEvent`          | `{ files: File[], xhr: XMLHttpRequest }`             | Upload failed (HTTP error or network error)               |
 | `progressEvent`       | `{ originalEvent: ProgressEvent, progress: number }` | Upload progress (0–100)                                   |
-| `clearEvent`          | `void`                                               | File queue cleared                                        |
+| `clearEvent`          | `void`                                               | File queue cleared via Cancel button                      |
 | `removeEvent`         | `{ file: File, originalEvent: Event }`               | Single file removed from queue                            |
-| `beforeUploadEvent`   | `{ xhr: XMLHttpRequest, formData: FormData }`        | Before upload starts                                      |
-| `beforeSendEvent`     | `{ xhr: XMLHttpRequest, formData: FormData }`        | Before the XHR request is sent                            |
-| `beforeDropEvent`     | `DragEvent`                                          | Before files are dropped on the zone                      |
-| `uploadHandlerEvent`  | `{ files: File[] }`                                  | Emitted when `customUpload=true` (handle upload manually) |
-| `validationFailEvent` | `{ file: File }`                                     | File failed size/type validation                          |
+| `beforeUploadEvent`   | `{ xhr: XMLHttpRequest, formData: FormData }`        | Before upload starts — mutate `xhr`/`formData` here       |
+| `beforeSendEvent`     | `{ xhr: XMLHttpRequest, formData: FormData }`        | Just before XHR is sent                                   |
+| `beforeDropEvent`     | `DragEvent`                                          | Before dropped files are processed                        |
+| `uploadHandlerEvent`  | `{ files: File[] }`                                  | Emitted when `customUpload=true` — handle upload manually |
+| `validationFailEvent` | `{ file: File }`                                     | File exceeded `maxFileSize`; component does not show a message |
 
 **Public methods:**
 
-| Method                    | Returns           | Description                                |
-| ------------------------- | ----------------- | ------------------------------------------ |
-| `clear()`                 | `Promise<void>`   | Clear all selected files                   |
-| `upload()`                | `Promise<void>`   | Trigger upload programmatically            |
-| `getFiles()`              | `Promise<File[]>` | Get currently queued files                 |
-| `getUploadedFiles()`      | `Promise<File[]>` | Get already uploaded files                 |
-| `setFiles(files)`         | `Promise<void>`   | Programmatically set file queue            |
-| `setUploadedFiles(files)` | `Promise<void>`   | Programmatically set uploaded files list   |
-| `formatSize(bytes)`       | `Promise<string>` | Format a byte count into a readable string |
+| Method                    | Returns                     | Description                                     |
+| ------------------------- | --------------------------- | ----------------------------------------------- |
+| `clear()`                 | `Promise<void>`             | Clear all queued files                          |
+| `upload()`                | `Promise<void>`             | Trigger upload programmatically                 |
+| `getFiles()`              | `Promise<File[]>`           | Get currently queued (not yet uploaded) files   |
+| `getUploadedFiles()`      | `Promise<File[]>`           | Get already uploaded files                      |
+| `setFiles(files)`         | `Promise<void>`             | Replace queue with given files                  |
+| `setUploadedFiles(files)` | `Promise<void>`             | Replace uploaded list with given files          |
+| `formatSize(bytes)`       | `Promise<string>`           | Format byte count to human-readable string      |
+| `getElement()`            | `Promise<HTMLElement>`      | Return the host element                         |
+| `getInput()`              | `Promise<HTMLInputElement>` | Return the hidden file `<input>` element        |
 
 ```tsx
 // React — custom upload handler
@@ -2294,7 +3206,9 @@ File upload component with drag-and-drop, validation, progress tracking and cust
     e.detail.files.forEach((f) => formData.append('file', f));
     await api.upload(formData);
   }}
-  onValidationFailEvent={(e) => console.warn('Invalid file:', e.detail.file.name)}
+  onValidationFailEvent={(e) =>
+    showToast(`${e.detail.file.name} exceeds the maximum upload size.`)
+  }
 />
 
 // React — automatic XHR upload
@@ -2312,36 +3226,46 @@ File upload component with drag-and-drop, validation, progress tracking and cust
 
 #### `ms-gauge-chart`
 
-Semicircular gauge/speedometer chart with animated needle, color zones and configurable labels.
+Semicircular gauge chart with animated needle, gradient color zones, and configurable labels. `shadow: false`.
 
-| Prop                | Type                                                                            | Default            | Description                                                                                                          |
-| ------------------- | ------------------------------------------------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------- |
-| `value`             | `number`                                                                        | `0`                | Current value to display on the gauge                                                                                |
-| `min`               | `number`                                                                        | `0`                | Minimum value                                                                                                        |
-| `max`               | `number`                                                                        | `100`              | Maximum value                                                                                                        |
-| `label`             | `string`                                                                        | `''`               | Primary label displayed below the value                                                                              |
-| `subLabel`          | `string`                                                                        | `''`               | Secondary label below the primary label                                                                              |
-| `unit`              | `string`                                                                        | `''`               | Accessibility unit label (screen readers only)                                                                       |
-| `arcs`              | `GaugeArc[]`                                                                    | (red→yellow→green) | Color zones. Each arc: `{ limit: number, color: string }`. `limit` is a fraction `0–1` of the full range             |
-| `color`             | `'primary' \| 'secondary' \| 'success' \| 'warning' \| 'alert' \| 'info' \| ''` | `''`               | Maxi color variant. When set, overrides `arcs` with a single monochromatic gradient                                  |
-| `reactiveColor`     | `boolean`                                                                       | `false`            | When `true`, the arc automatically switches to a monochromatic gradient of the zone where the needle currently rests |
-| `labelColor`        | `string`                                                                        | `''`               | Primary label color. Defaults to the color of the current arc zone                                                   |
-| `subLabelColor`     | `string`                                                                        | `'#777777'`        | Sub-label color                                                                                                      |
-| `ticks`             | `number`                                                                        | `12`               | Number of white tick marks drawn over the arc                                                                        |
-| `arcWidth`          | `number`                                                                        | `14`               | Radial thickness of the arc band (valid range: 6–28)                                                                 |
-| `animated`          | `boolean`                                                                       | `true`             | Animate the needle from 0 to the target value on mount                                                               |
-| `animationDuration` | `number`                                                                        | `1500`             | Animation duration in milliseconds                                                                                   |
-| `width`             | `string`                                                                        | `'300px'`          | CSS width of the component container                                                                                 |
-| `decimals`          | `number`                                                                        | `0`                | Decimal places shown in the displayed value                                                                          |
+| Prop                | Attribute             | Type                                                                            | Default            | Description                                                                                      |
+| ------------------- | --------------------- | ------------------------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------ |
+| `value`             | `value`               | `number`                                                                        | `0`                | Current value — animates to this on mount and on each change                                     |
+| `min`               | `min`                 | `number`                                                                        | `0`                | Minimum of the gauge range                                                                       |
+| `max`               | `max`                 | `number`                                                                        | `100`              | Maximum of the gauge range                                                                       |
+| `arcs`              | **JS only**           | `GaugeArc[]`                                                                    | red→yellow→green   | Color zones sorted by `limit` ascending — must be set as JS property                            |
+| `color`             | `color`               | `'primary'\|'secondary'\|'success'\|'warning'\|'alert'\|'info'\|''`            | `''`               | Maxi color variant — see color behavior table below                                              |
+| `reactiveColor`     | `reactive-color`      | `boolean`                                                                       | `false`            | Arc switches to monochromatic gradient of the current zone as value changes                      |
+| `label`             | `label`               | `string`                                                                        | `''`               | Primary label below the value                                                                    |
+| `subLabel`          | `sub-label`           | `string`                                                                        | `''`               | Secondary label below the primary label                                                          |
+| `unit`              | `unit`                | `string`                                                                        | `''`               | Unit for `aria-label` only — not shown visually; put unit text in `label` instead                |
+| `labelColor`        | `label-color`         | `string`                                                                        | `''`               | Primary label color; defaults to auto-darkened zone color                                        |
+| `subLabelColor`     | `sub-label-color`     | `string`                                                                        | `'#777777'`        | Sub-label color                                                                                  |
+| `ticks`             | `ticks`               | `number`                                                                        | `12`               | Number of white tick marks over the arc                                                          |
+| `arcWidth`          | `arc-width`           | `number`                                                                        | `14`               | Arc band radial thickness — suggested: `6` thin · `10` medium · `14` default · `20` thick · `28` extra |
+| `animated`          | `animated`            | `boolean`                                                                       | `true`             | Animate needle on mount and on every `value` change                                              |
+| `animationDuration` | `animation-duration`  | `number`                                                                        | `1500`             | Animation duration in ms                                                                         |
+| `width`             | `width`               | `string`                                                                        | `'300px'`          | CSS width of the container (e.g. `'100%'`)                                                       |
+| `decimals`          | `decimals`            | `number`                                                                        | `0`                | Decimal places shown in the displayed value                                                      |
 
 **`GaugeArc` interface:**
 
-```typescript
+```ts
 interface GaugeArc {
-  limit: number; // fraction [0-1] of the range where this zone ends
-  color: string; // any CSS color value (hex, rgb, hsl, named)
+  limit: number; // fraction [0–1] of the range where this zone ends
+  color: string; // any CSS hex color (e.g. '#F44336')
 }
+// Default: [{ limit: 0.25, color: '#F44336' }, { limit: 0.5, color: '#FFEB3B' }, { limit: 1, color: '#4CAF50' }]
 ```
+
+**Color behavior:**
+
+| Scenario | Arc fill | Needle / value color |
+| --- | --- | --- |
+| Default (no `color`, no `reactiveColor`) | Multi-zone gradient from `arcs` | Zone color at current value |
+| `color` set, `reactiveColor=false` | **Solid** Maxi color (not a gradient) | Maxi color |
+| `color` set, `reactiveColor=true` | Monochromatic zone gradient (`reactiveColor` wins) | Maxi color |
+| `reactiveColor=true`, no `color` | Monochromatic gradient of current zone | Zone color |
 
 No events or public methods.
 
@@ -2349,10 +3273,10 @@ No events or public methods.
 // React — default red/yellow/green zones
 <MsGaugeChart value={72} label="Performance" subLabel="Current month" width="280px" />
 
-// React — single Maxi color variant
-<MsGaugeChart value={45} min={0} max={200} color="primary" label="Requests/sec" animated />
+// React — solid Maxi color (no gradient)
+<MsGaugeChart value={45} min={0} max={200} color="primary" label="Requests/sec" />
 
-// React — custom color zones
+// React — custom zones + reactive monochromatic gradient
 <MsGaugeChart
   value={850}
   min={300}
@@ -2390,7 +3314,7 @@ No events or public methods.
 | `msShow` | `void`  | Button became visible (user scrolled past threshold)      |
 | `msHide` | `void`  | Button became hidden (user scrolled back above threshold) |
 
-Uses shadow DOM (scoped CSS). The button is fixed-positioned with responsive sizing (3rem desktop → 2.25rem mobile).
+`scoped: true` (Stencil scoped encapsulation — **not** shadow DOM; external CSS can still target the component via attribute selectors). The button is fixed-positioned with responsive sizing (3rem desktop → 2.25rem mobile).
 
 ```html
 <!-- Vanilla — default behaviour -->
@@ -2419,6 +3343,67 @@ Uses shadow DOM (scoped CSS). The button is fixed-positioned with responsive siz
 ---
 
 ## 7. Advanced patterns
+
+### Components in flex / grid layouts — width problem
+
+**Problem:** custom elements (`ms-*`) render as `display: inline` by default in most browsers. Inside a flex or grid container they shrink to their minimum content width (just the arrow icon), the placeholder is invisible, and the component only looks correct after selecting a value.
+
+**Rule:** always give an explicit width to form components inside flex containers. The two standard approaches:
+
+**Option A — wrapper div (recommended in React):**
+Control the flex item with a wrapping `<div>`, not the web component directly. This is the most reliable approach across all component types.
+
+```tsx
+// ✅ Wrap each component in a sized div
+<div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-end' }}>
+  <div style={{ flex: '0 0 200px' }}>
+    <MsDropdown label="Estado" options={statusOptions} onSelected={(e) => setStatus(e.detail)} />
+  </div>
+  <div style={{ flex: '0 0 220px' }}>
+    <MsMultiselect label="Categorías" options={catOptions} onSelected={(e) => setCats(e.detail)} />
+  </div>
+  <div style={{ flex: '0 0 180px' }}>
+    <MsCalendar label="Fecha" onUpdate={(e) => setDate(e.detail)} />
+  </div>
+</div>
+```
+
+**Option B — CSS selector on the component tag:**
+Target the component tag (not internal classes) scoped under a container class you control.
+
+```css
+/* In your component's CSS or global styles */
+.filter-row {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-end;
+}
+
+/* Target the component element tag, not internal classes like .ms-dropdown-box */
+.filter-row ms-dropdown,
+.filter-row ms-multiselect,
+.filter-row ms-autocomplete,
+.filter-row ms-calendar,
+.filter-row ms-input-field,
+.filter-row ms-input-number,
+.filter-row ms-select-button {
+  flex: 0 0 200px;   /* fixed width — adjust per component */
+  min-width: 0;      /* prevents overflow of long labels */
+}
+```
+
+**For grid layouts** (no issue — grid items fill the column naturally):
+```tsx
+<div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem' }}>
+  <MsDropdown label="Estado" options={statusOptions} onSelected={(e) => setStatus(e.detail)} />
+  <MsMultiselect label="Categorías" options={catOptions} onSelected={(e) => setCats(e.detail)} />
+  <MsCalendar label="Fecha" onUpdate={(e) => setDate(e.detail)} />
+</div>
+```
+
+> **Components affected:** `MsDropdown`, `MsMultiselect`, `MsAutocomplete`, `MsCalendar`, `MsInputField`, `MsInputNumber`, `MsSelectButton`, `MsInputSwitch`. Static/display components (`MsBadge`, `MsMessage`, etc.) are not affected.
+
+---
 
 ### Calling public methods via refs (React)
 
