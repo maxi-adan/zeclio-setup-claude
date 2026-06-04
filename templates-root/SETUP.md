@@ -134,7 +134,23 @@ Cada paso genera artefactos en `specs/NNN-nombre/`. SpecKit los encadena automá
 
 ### Paso 2 — Clarificar (opcional): `/speckit-clarify`
 
-Usa este paso si la spec quedó con marcadores `[NEEDS CLARIFICATION]` o si quieres refinar alcance antes de planificar. Si la spec ya está limpia, puedes saltarlo.
+**En la práctica este paso se omite la mayoría de las veces.** El flujo habitual es `specify → plan → tasks → implement` directamente.
+
+**Cuándo sí usarlo:**
+
+| Situación | Por qué clarificar primero |
+| --------- | ------------------------- |
+| La spec tiene marcadores `[NEEDS CLARIFICATION]` | El modelo detectó ambigüedades que necesita resolver antes de planificar |
+| La feature tiene reglas de negocio complejas que no quedaron en la spec | Evita que el plan tome decisiones técnicas incorrectas |
+| Hay múltiples enfoques válidos y quieres decidir uno antes del plan | El plan ya no tendrá que hacer suposiciones |
+
+**Cuándo saltarlo** (la mayoría de los casos):
+
+- La spec quedó limpia y completa
+- Es una feature técnica estándar (tabla con filtros, formulario CRUD, etc.)
+- Los requisitos son claros para ti aunque no estén hyper-detallados
+
+> Si saltas clarify y el plan encuentra ambigüedades, las marcará como `[NEEDS CLARIFICATION]` en `research.md` durante la fase 0 de `/speckit-plan` — mismo resultado, un paso después.
 
 ---
 
