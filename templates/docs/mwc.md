@@ -9,6 +9,58 @@ description: Implements components from the maxi-web-components library in React
 
 ---
 
+## ⚠️ Excepciones ZEUS — single-spa + React 17
+
+Estos patrones son **obligatorios** en microfrontends ZEUS. Los componentes que usan portales o manipulan `document.body` directamente pueden causar el error `NotFoundError: removeChild` si se montan/actualizan mientras single-spa gestiona el ciclo de vida del microfrontend.
+
+### `MsDialog` — nunca renderizar antes de tener los datos
+
+**Problema**: `MsDialog` adjunta un overlay a `document.body` al montarse. Si el componente se monta con `visible=true` y luego React hace un re-render (p. ej. porque un `useEffect` resuelve y llama a `setState`), el overlay queda en un estado inconsistente con el árbol de React → `removeChild` error.
+
+**Patrón correcto en ZEUS:**
+
+```jsx
+// ✅ CORRECTO — MsDialog se monta UNA SOLA VEZ con todos los datos listos
+const [visible, setVisible] = useState(false);  // empieza oculto
+const [data, setData] = useState("");
+
+useEffect(() => {
+  fetchData()
+    .then((result) => setData(result))
+    .finally(() => setVisible(true));  // muestra DESPUÉS de tener los datos
+}, []);
+
+if (!visible) return null;  // no renderiza nada hasta que haya datos
+
+return (
+  <MsDialog visible header="..." onHide={() => setVisible(false)}>
+    <p>{data}</p>
+  </MsDialog>
+);
+```
+
+```jsx
+// ❌ INCORRECTO — monta el dialog antes de tener datos, luego re-renderiza
+const [visible] = useState(true);
+const [data, setData] = useState(null);
+
+useEffect(() => {
+  fetchData().then(setData);  // re-render mientras MsDialog ya está en el DOM → crash
+}, []);
+
+return (
+  <MsDialog visible={visible}>
+    {data === null ? <MsSpinner /> : <p>{data}</p>}
+  </MsDialog>
+);
+```
+
+**Componentes afectados por este patrón**: `MsDialog`, potencialmente `MsSidebar` y otros que usen portales internos.
+
+---
+
+---
+
 ## Table of Contents
 
 1. [General architecture](#1-general-architecture)
