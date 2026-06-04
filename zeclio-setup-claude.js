@@ -129,7 +129,7 @@ function main() {
       '\n- **Al terminar cualquier tarea**, actualizar este archivo si algo cambió en la arquitectura del proyecto: ' +
       'nueva ruta registrada, nuevo módulo compartido, nuevo patrón establecido, nueva regla de la plataforma descubierta. ' +
       'No registrar cambios de código — eso es responsabilidad del historial de git.\n' +
-      '- **Al terminar cualquier tarea que cree un componente o complete una feature**, actualizar `.claude/memory/project-state.md`: ' +
+      '- **Al terminar cualquier tarea que cree un componente o complete una feature**, actualizar `project-state.md`: ' +
       'agregar el componente en la tabla con su ruta y descripción de una línea, o la feature en la tabla de features completadas ' +
       'con referencia a su spec. No esperar a que se pida — hacerlo siempre al finalizar.\n';
     const claudeContent = fs.readFileSync(claudePath, 'utf-8');
