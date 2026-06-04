@@ -116,7 +116,7 @@ The `docs/` folder contains context documents loaded by Claude Code when it open
 | File | Covers |
 |---|---|
 | `login.md` | How to consume `@maxi/login`: `token$`, `validateToken`, `decodeJWT`, session patterns, rules |
-| `mwc.md` | All `ms-*` / `Ms*` components: props, event names, refs, usage rules |
+| `mwc.md` | All `ms-*` / `Ms*` components: props, event names, refs, usage rules. Includes **⚠️ Excepciones ZEUS** section with mandatory patterns for single-spa + React 17: MsDialog lifecycle, `key` for conditional content, MsTable numeric column alignment. |
 | `root-config.md` | Registration flow, active routes, import maps per environment, cross-app communication |
 | `styleguide.md` | Full component catalog, form helpers, date utilities, permission API, strict usage rules |
 | `api.md` | HTTP service pattern: `instance.js` with interceptors, `validateToken`+`token$` for auth headers, `window.APP_CONFIG_*` for base URL, `logout()` on invalid token |
@@ -138,6 +138,8 @@ Both are read from `process.argv` at module load time.
 ## Regla de mantenimiento
 
 - **Al terminar cualquier tarea**, actualizar este archivo si algo cambió en la arquitectura del proyecto: nueva lógica de inyección en el script, nuevos archivos en templates, cambios en el flujo de sincronización, nuevas flags. No registrar cambios de contenido de docs — eso es responsabilidad del historial de git.
+
+- **Al documentar una nueva excepción ZEUS en `mwc.md`**, replicarla siempre en `templates/docs/mwc.md` (este repo) y registrarla en la tabla de la sección 7 de `SETUP.md`. Las excepciones ZEUS son reglas obligatorias — deben viajar a todos los proyectos en el próximo `npx zeclio-setup-claude`.
 
 ---
 

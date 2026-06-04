@@ -273,7 +273,29 @@ Los docs se crean en el repo fuente según su naturaleza:
 
 ---
 
-## 7. Disparar la Action manualmente
+## 7. Excepciones ZEUS documentadas en `mwc.md`
+
+Las reglas específicas de ZEUS (comportamientos de MWC que difieren del default en el contexto single-spa + React 17) se documentan en la sección **`⚠️ Excepciones ZEUS`** al inicio de `mwc.md`. Son **obligatorias** en todos los microfrontends.
+
+### Reglas actuales
+
+| Componente | Regla |
+|---|---|
+| `MsDialog` | Nunca renderizar con `visible=true` antes de tener los datos listos. Patrón: `useState(false)` + `if (!visible) return null` + mostrar solo después de resolver el fetch. |
+| `MsDialog` | Cuando el mismo dialog muestra distintos registros (edición por fila en tabla), usar `key={record.id}` para forzar remount. Sin `key` React reutiliza la instancia y el contenido queda stale. |
+| `MsTable` | Columnas con valores numéricos (dinero, cantidades, porcentajes) siempre con `align: 'right'` y `alignHeader: 'right'`. |
+
+### Cómo agregar una excepción nueva
+
+1. Descúbrela en un microfrontend real.
+2. Documenta la regla en la sección `⚠️ Excepciones ZEUS` de `.claude/docs/mwc.md` del proyecto.
+3. Replica la misma regla en `templates/docs/mwc.md` de este repo.
+4. Corre `npm run sync:docs` o edita directamente `templates/docs/mwc.md`.
+5. Mergea el PR → nueva versión llega a todos los proyectos con `npx zeclio-setup-claude`.
+
+---
+
+## 8. Disparar la Action manualmente
 
 Si necesitas publicar sin hacer un nuevo sync, puedes disparar la Action desde GitHub:
 
@@ -283,7 +305,7 @@ github.com/maxi-adan/zeclio-setup-claude → Actions → Publish to Nexus → Ru
 
 ---
 
-## 8. Troubleshooting
+## 9. Troubleshooting
 
 | Problema | Solución |
 |---|---|

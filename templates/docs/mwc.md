@@ -59,6 +59,33 @@ return (
 
 ---
 
+### `MsDialog` — contenido condicional: usar `key` para forzar remount
+
+Cuando el contenido de un `MsDialog` depende de datos que cambian entre aperturas (ej: un modal de edición que muestra distintos registros según cuál se seleccionó en una tabla), React reutiliza la instancia existente del componente y el contenido interno queda desactualizado.
+
+**Solución:** agregar `key` igual al identificador del dato que cambia. React destruye y remonta el componente cuando `key` cambia, forzando un render limpio.
+
+```tsx
+// ✅ CORRECTO — key fuerza remount cuando cambia el registro seleccionado
+<MsDialog
+  key={selectedUser?.id}
+  visible={visible}
+  header="Editar usuario"
+  onHide={() => setVisible(false)}
+>
+  <MsInputField label="Nombre" value={selectedUser?.name} />
+</MsDialog>
+
+// ❌ INCORRECTO — sin key, React reutiliza la instancia y el contenido queda stale
+<MsDialog visible={visible} header="Editar usuario" onHide={() => setVisible(false)}>
+  <MsInputField label="Nombre" value={selectedUser?.name} />
+</MsDialog>
+```
+
+**Aplica cuando:** el mismo `MsDialog` se reutiliza para distintos registros (tabla con edición por fila, listas de items editables), o cuando el contenido cambia completamente entre aperturas.
+
+---
+
 ### `removeChild` en componentes con popup/overlay — estado de la librería
 
 **Causa raíz:** los componentes con `shadow: false` que usan renderizado condicional (`{condition && <div>}`) para mostrar/ocultar un popup o overlay pueden lanzar `NotFoundError: Failed to execute 'removeChild' on 'Node'` cuando Stencil intenta reconciliar el vdom justo mientras un evento externo (click-outside, touchstart) todavía propaga sobre el mismo nodo.
@@ -2536,6 +2563,13 @@ interface ColumnDef {
   disabled?: (row: any) => boolean;            // return true to disable the row from this column's logic
 }
 ```
+
+> **Columnas numéricas (dinero, cantidades, porcentajes):** siempre usar `align: 'right'` y `alignHeader: 'right'`. La alineación derecha es la convención estándar para cifras y facilita la comparación vertical entre filas.
+> ```typescript
+> { field: 'price',  header: 'Precio', align: 'right', alignHeader: 'right' }
+> { field: 'amount', header: 'Monto',  align: 'right', alignHeader: 'right' }
+> { field: 'stock',  header: 'Stock',  align: 'right', alignHeader: 'right' }
+> ```
 
 **Events:**
 
