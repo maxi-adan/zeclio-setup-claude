@@ -284,6 +284,7 @@ Las reglas específicas de ZEUS (comportamientos de MWC que difieren del default
 | `MsDialog` | Nunca renderizar con `visible=true` antes de tener los datos listos. Patrón: `useState(false)` + `if (!visible) return null` + mostrar solo después de resolver el fetch. |
 | `MsDialog` | Cuando el mismo dialog muestra distintos registros (edición por fila en tabla), usar `key={record.id}` para forzar remount. Sin `key` React reutiliza la instancia y el contenido queda stale. |
 | `MsTable` | Columnas con valores numéricos (dinero, cantidades, porcentajes) siempre con `align: 'right'` y `alignHeader: 'right'`. |
+| `MsTable` | Siempre usar `size="small"`. El default `"normal"` produce filas demasiado altas para los diseños ZEUS. |
 
 ### Cómo agregar una excepción nueva
 

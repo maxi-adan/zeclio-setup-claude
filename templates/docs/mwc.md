@@ -59,6 +59,20 @@ return (
 
 ---
 
+### `MsTable` — siempre usar `size="small"`
+
+El default del componente es `size="normal"`, pero en ZEUS todos los usos deben ser `size="small"`.
+
+```tsx
+// ✅ CORRECTO en ZEUS
+<MsTable columns={columns} data={rows} size="small" />
+
+// ❌ INCORRECTO — el default 'normal' produce filas demasiado altas
+<MsTable columns={columns} data={rows} />
+```
+
+---
+
 ### `MsDialog` — contenido condicional: usar `key` para forzar remount
 
 Cuando el contenido de un `MsDialog` depende de datos que cambian entre aperturas (ej: un modal de edición que muestra distintos registros según cuál se seleccionó en una tabla), React reutiliza la instancia existente del componente y el contenido interno queda desactualizado.
@@ -2519,7 +2533,7 @@ Advanced data table with sorting, pagination, selection and expandable rows. `sh
 | `columns`                 | `ColumnDef[]`                    | `[]`       | Column definitions (see interface below)                                                     |
 | `data`                    | `any[]`                          | `[]`       | Data rows to display                                                                         |
 | `dataKey`                 | `string \| number`               | `'id'`     | Field used as unique row identifier for selection, expand and reorder                        |
-| `size`                    | `'small' \| 'normal' \| 'large'` | `'normal'` | Row density                                                                                  |
+| `size`                    | `'small' \| 'normal' \| 'large'` | `'normal'` | Row density — **usar siempre `'small'` en ZEUS**                                             |
 | `class`                   | `string`                         | `undefined`| Extra CSS class on the `<table>` element                                                     |
 | `idComponent`             | `string`                         | `''`       | Prefix for internal unique cell IDs                                                          |
 | `selectionRow`            | `boolean`                        | `false`    | Add checkbox column for row selection                                                        |
@@ -2600,6 +2614,7 @@ const columns = [
   columns={columns}
   data={users}
   dataKey="id"
+  size="small"
   selectionRow
   paginator
   rowsPerPage={20}

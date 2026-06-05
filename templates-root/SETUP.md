@@ -177,7 +177,7 @@ Genera `specs/NNN-nombre/tasks.md` con tareas ordenadas por dependencia y marcad
 Ejecuta las tareas de `tasks.md` en orden. Marca cada tarea completada con `[X]`. Si un paso falla, detiene y reporta con contexto para depurar.
 
 Al implementar, Claude aplica automáticamente todas las reglas de CLAUDE.md:
-- Usa `MsTable` en lugar de `<table>`
+- Usa `MsTable` con `size="small"` en lugar de `<table>`
 - Usa `MsInputField`, `MsDropdown`, etc. en lugar de `<input>`, `<select>`
 - Importa todo desde `@maxi/styleguide`
 - Usa `validatePermission()` para controlar visibilidad por rol
