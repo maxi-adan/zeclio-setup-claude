@@ -178,6 +178,7 @@ Ejecuta las tareas de `tasks.md` en orden. Marca cada tarea completada con `[X]`
 
 Al implementar, Claude aplica automáticamente todas las reglas de CLAUDE.md:
 - Usa `MsTable` con `size="small"` en lugar de `<table>`
+- En columnas con acciones clicables (`MsButton`, íconos, links), siempre envolver en `<div class="ms-table-actions">` para que el click no propague al `rowClick` de la fila
 - Usa `MsInputField`, `MsDropdown`, etc. en lugar de `<input>`, `<select>`
 - Importa todo desde `@maxi/styleguide`
 - Usa `validatePermission()` para controlar visibilidad por rol

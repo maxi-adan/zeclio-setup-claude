@@ -73,6 +73,39 @@ El default del componente es `size="normal"`, pero en ZEUS todos los usos deben 
 
 ---
 
+### `MsTable` — elementos clicables en celdas: obligatorio `class="ms-table-actions"`
+
+Cuando una celda contiene elementos clicables (botones, íconos, links, menús), el click del elemento **también dispara `rowClick`** de la fila (o el toggle de `expandableRow`). Para evitarlo, el contenedor de acciones **debe** llevar la clase `ms-table-actions`.
+
+El componente tiene este guard en su handler de fila (fuente: `ms-table.tsx`):
+
+```tsx
+if (target.closest('.ms-table-actions')) {
+  return; // cancela rowClick / expand
+}
+```
+
+```tsx
+// ✅ CORRECTO — el click en el botón NO dispara rowClick
+render: (row) => (
+  <div class="ms-table-actions">
+    <MsButton label="Editar" onClickEvent={() => openEdit(row)} />
+    <MsButton label="Eliminar" variant="danger" onClickEvent={() => openDelete(row)} />
+  </div>
+)
+
+// ❌ INCORRECTO — el click en el botón también dispara rowClick de la fila
+render: (row) => (
+  <div>
+    <MsButton label="Editar" onClickEvent={() => openEdit(row)} />
+  </div>
+)
+```
+
+Aplica a: `MsButton`, íconos clicables, `<a>`, `MsDropdown`, cualquier elemento con `onClick`/`onClickEvent` dentro de una columna `render`.
+
+---
+
 ### `MsDialog` — contenido condicional: usar `key` para forzar remount
 
 Cuando el contenido de un `MsDialog` depende de datos que cambian entre aperturas (ej: un modal de edición que muestra distintos registros según cuál se seleccionó en una tabla), React reutiliza la instancia existente del componente y el contenido interno queda desactualizado.
@@ -2577,6 +2610,8 @@ interface ColumnDef {
   disabled?: (row: any) => boolean;            // return true to disable the row from this column's logic
 }
 ```
+
+> **Elementos clicables en `render`:** siempre envolver en `<div class="ms-table-actions">`. Sin esta clase el click propaga a la fila y dispara `rowClick` o el toggle de expand. Ver sección ⚠️ Excepciones ZEUS.
 
 > **Columnas numéricas (dinero, cantidades, porcentajes):** siempre usar `align: 'right'` y `alignHeader: 'right'`. La alineación derecha es la convención estándar para cifras y facilita la comparación vertical entre filas.
 > ```typescript

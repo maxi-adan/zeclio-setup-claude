@@ -116,7 +116,7 @@ The `docs/` folder contains context documents loaded by Claude Code when it open
 | File | Covers |
 |---|---|
 | `login.md` | How to consume `@maxi/login`: `token$`, `validateToken`, `decodeJWT`, session patterns, rules |
-| `mwc.md` | All `ms-*` / `Ms*` components: props, event names, refs, usage rules. Includes **⚠️ Excepciones ZEUS** section with mandatory patterns for single-spa + React 17: MsDialog lifecycle, `key` for conditional content, MsTable `size="small"`, MsTable numeric column alignment. |
+| `mwc.md` | All `ms-*` / `Ms*` components: props, event names, refs, usage rules. Includes **⚠️ Excepciones ZEUS** section with mandatory patterns for single-spa + React 17: MsDialog lifecycle, `key` for conditional content, MsTable `size="small"`, MsTable `ms-table-actions` on clickable cells, MsTable numeric column alignment. |
 | `root-config.md` | Registration flow, active routes, import maps per environment, cross-app communication |
 | `styleguide.md` | Full component catalog, form helpers, date utilities, permission API, strict usage rules |
 | `api.md` | HTTP service pattern: `instance.js` with interceptors, `validateToken`+`token$` for auth headers, `window.APP_CONFIG_*` for base URL, `logout()` on invalid token |
