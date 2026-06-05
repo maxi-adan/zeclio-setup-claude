@@ -28,6 +28,18 @@ npm view zeclio-setup-claude version --registry=https://artifacts.maxilabs.net/r
 
 - Si las versiones **coinciden** → continúa normalmente sin mencionar nada.
 
+### 4. Verificar si CLAUDE.md está inicializado
+
+Lee `CLAUDE.md`. Si el archivo **no contiene ninguna sección `##`** (solo tiene las directivas `@` y las reglas de mantenimiento, sin `## Commands`, `## Architecture` ni ninguna otra sección con contenido específico del proyecto), significa que el usuario no ejecutó `/init` todavía.
+
+En ese caso, **antes de responder cualquier solicitud** (ya sea una tarea directa por chat o un comando SpecKit), pregunta una sola vez:
+
+> "Este proyecto aún no tiene documentación de arquitectura en `CLAUDE.md`. ¿Querés que ejecute `/init` primero? Analizo el proyecto y documento comandos, arquitectura y patrones — lo que mejora la calidad de mis respuestas. Si preferís continuar sin init, también está bien."
+
+- Si el usuario dice que **sí** → invoca `/init` y luego retoma su solicitud original.
+- Si el usuario dice que **no** → continúa normalmente sin volver a preguntar en esa sesión.
+- Si `CLAUDE.md` ya tiene secciones `##` → no preguntes nada, continúa.
+
 ---
 
 ## Documentos de contexto disponibles
