@@ -496,3 +496,174 @@ This applies to all components that expose `class` or `customClass`:
 | Stepper / wizard            | `MsSteps`         |
 | Side menu                   | `MsSidebar`       |
 | Cascade menu                | `MsCascadeMenu`   |
+
+---
+
+## TypeScript — declaraciones en `src/models/` *(solo proyectos TypeScript)*
+
+> **Esta sección solo aplica cuando el proyecto usa TypeScript** (`.ts` / `.tsx`, tiene `tsconfig.json`). En proyectos JavaScript no se requiere ninguna acción.
+
+`@maxi/styleguide` y `@maxi/login` son módulos de import-map resueltos en runtime — **no son paquetes npm instalados**. TypeScript no sabe de ellos a menos que existan stubs de declaración.
+
+### Dónde viven los tipos
+
+| Archivo | Contenido |
+|---------|-----------|
+| `src/models/modules.d.ts` | Bloques `declare module "@maxi/*"` |
+| `src/models/config.d.ts`  | Interface `AppConfig` y otros tipos del config runtime |
+
+> Nunca agregar estas declaraciones en `declarations.d.ts` (ese archivo es solo para assets: `*.png`, `*.svg`, `*.css`).
+
+### Cuándo actualizar `modules.d.ts`
+
+Actualizar cuando TypeScript reporte cualquiera de estos errores sobre un import `@maxi/*`:
+
+- `Cannot find module '@maxi/...' or its corresponding type declarations. ts(2307)`
+- `Module '"@maxi/styleguide"' has no exported member 'X'. ts(2305)`
+- `Property 'X' does not exist on type 'Y'. ts(2339)`
+- `Argument of type 'X' is not assignable to parameter of type 'Y'. ts(2345)`
+
+### Reglas de tipado
+
+**1. Tipos reales cuando el shape es conocido — `any` solo por prop específico**
+
+```typescript
+// CORRECTO — typed con shapes reales
+declare module "@maxi/styleguide" {
+  export function validatePermission(
+    env: string,
+    token: string,
+    system: string,
+    permission: string
+  ): Promise<Record<string, unknown>>;
+  export const ProtectedRouteComponent: import("react").FC<{
+    permission: boolean | null;
+    redirectPath: string;
+    children: import("react").ReactNode;
+  }>;
+  export const MsPreload: import("react").FC<{ image?: any; [key: string]: any }>;
+  export const MaxiAnimation: any; // asset opaco → any
+}
+
+// INCORRECTO — pierde toda la seguridad de tipos
+declare module "@maxi/styleguide" {
+  const exports: any;
+  export = exports;
+}
+```
+
+**2. Usar `import()` inline dentro de `declare module` — nunca `import` al tope**
+
+```typescript
+// CORRECTO
+declare module "@maxi/styleguide" {
+  export const ProtectedRouteComponent: import("react").FC<{
+    permission: boolean | null;
+    redirectPath: string;
+    children: import("react").ReactNode;
+  }>;
+}
+
+// INCORRECTO — TS1232: import declarations not allowed in ambient modules
+declare module "@maxi/styleguide" {
+  import React from "react";
+  export const ProtectedRouteComponent: React.FC<{ permission: boolean | null }>;
+}
+```
+
+**3. Agregar exports incrementalmente — solo los que el proyecto realmente importa**
+
+No copiar la API completa de entrada. Agregar cada entrada cuando TypeScript se queje por primera vez.
+
+**4. `[key: string]: any` como escape hatch para props no documentadas**
+
+```typescript
+export const MsButton: import("react").FC<{
+  label?: string;
+  variant?: "primary" | "secondary" | "danger" | "outlined" | string;
+  loading?: boolean;
+  disabled?: boolean;
+  onClickEvent?: (e: any) => void;
+  [key: string]: any; // props no documentadas
+}>;
+```
+
+### Declaraciones base de referencia
+
+**`src/models/modules.d.ts`** — punto de partida para los módulos `@maxi/*`:
+
+```typescript
+declare module "@maxi/login" {
+  export const token$: import("rxjs").Observable<string>;
+  export function validateToken(): Promise<boolean>;
+  export function getUserRoles(token: string): Promise<string>;
+  export function logout(): void;
+  export function decodeJWT(token: string): {
+    id: string;
+    iat: number;
+    exp: number;
+    createdAt: string;
+    expiresAt: string;
+  } | null;
+  export function getUserProfile(): Promise<string>;
+  export const keycloak: {
+    token: string | undefined;
+    authenticated: boolean;
+    resourceAccess: Record<string, { roles: string[] }> | undefined;
+    realmAccess: { roles: string[] } | undefined;
+    login(): Promise<void>;
+    logout(): Promise<void>;
+    updateToken(minValidity: number): Promise<boolean>;
+    [key: string]: any;
+  };
+}
+
+declare module "@maxi/styleguide" {
+  export function validatePermission(
+    env: string,
+    token: string,
+    system: string,
+    permission: string
+  ): Promise<Record<string, unknown>>;
+  export function getPermissions(): string[];
+  export function validateGroupPermissions(permissions: string[]): boolean;
+  export const ProtectedRouteComponent: import("react").FC<{
+    permission: boolean | null;
+    redirectPath: string;
+    children: import("react").ReactNode;
+  }>;
+  export const MsPreload: import("react").FC<{
+    visible?: boolean;
+    text?: string;
+    fullscreen?: boolean;
+    image?: any;
+    [key: string]: any;
+  }>;
+  export const MsSpinner: import("react").FC<{
+    width?: string | number;
+    height?: string | number;
+    color?: string;
+    [key: string]: any;
+  }>;
+  export const MaxiAnimation: any;
+}
+```
+
+**`src/models/config.d.ts`** — shape del config runtime:
+
+```typescript
+export interface AppConfig {
+  REACT_APP_API: string;
+  REACT_APP_PERMISSION_ENVIRONMENT: string;
+  [key: string]: string;
+}
+```
+
+### Reglas para Claude *(TypeScript únicamente)*
+
+- **Solo actuar en proyectos TypeScript.** Si el proyecto usa `.js`, no hay declaraciones que agregar.
+- **Nunca agregar declaraciones `@maxi/*` en `node_modules`, `declarations.d.ts` o paths de `tsconfig.json`.** Siempre en `src/models/modules.d.ts`.
+- **Corregir un error a la vez.** Cuando TypeScript reporta un export faltante, agregar solo ese export. No pegar la API completa de entrada.
+- **Preferir `import("pkg").Type` sobre `any` cuando el tipo está documentado** en este archivo o en `login.md`. Usar `any` solo cuando el shape no está documentado o es demasiado dinámico.
+- **Cuando un prop de componente causa `ts(2345)`, verificar primero en este documento y en `mwc.md`.** Si el nombre o valor del prop está documentado, tiparlo con precisión. Si no, ampliar solo ese prop a `any`.
+- **No tocar `src/models/config.d.ts` para declaraciones de módulos** — ese archivo es exclusivamente para el shape del config runtime (`AppConfig`).
