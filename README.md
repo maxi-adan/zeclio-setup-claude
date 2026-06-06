@@ -78,7 +78,7 @@ zeclio-setup-claude
 ```
 .claude/
 ├── .version                    ← Versión instalada del setup (usada para detectar actualizaciones)
-├── maxi-setup.md               ← Instrucciones de sesión: verifica versión, referencia docs
+├── maxi-setup.md               ← Instrucciones de sesión: verifica versión, verifica init de CLAUDE.md, referencia docs
 ├── docs/
 │   ├── login.md                ← Contexto de @maxi/login (Keycloak, token$, API de sesión)
 │   ├── mwc.md                  ← Referencia de Maxi Web Components (ms-* / Ms*)
@@ -123,7 +123,8 @@ El script **inyecta dos bloques** en `CLAUDE.md` si no están ya presentes (crea
 Después de ejecutar el comando, abre el proyecto en Claude Code. Al inicio de cada sesión Claude:
 
 1. Lee `.claude/maxi-setup.md` y verifica si la versión instalada coincide con la disponible en Nexus — si no, ejecuta `npx zeclio-setup-claude@latest --force` automáticamente.
-2. Carga todos los docs de `.claude/docs/` en contexto (login, mwc, root-config, styleguide, api, state).
-3. Aplica las reglas de `CLAUDE.md` y los principios de `.specify/memory/constitution.md` en cualquier tarea de código.
+2. Verifica si `CLAUDE.md` está inicializado (contiene secciones `##` con arquitectura del proyecto). Si no, pregunta una sola vez si querés correr `/init`.
+3. Carga todos los docs de `.claude/docs/` en contexto (login, mwc, root-config, styleguide, api, state).
+4. Aplica las reglas de `CLAUDE.md` y los principios de `.specify/memory/constitution.md` en cualquier tarea de código.
 
 Consulta `SETUP.md` en la raíz del proyecto para el flujo de trabajo completo: tareas directas, features con SpecKit y cómo mantener `CLAUDE.md` actualizado.

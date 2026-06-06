@@ -74,7 +74,7 @@ Both `templates/` and `templates-root/` are shipped with the package (listed in 
 
 ```
 templates/
-├── CLAUDE.md           ← instrucciones para Claude: verificar versión al inicio de sesión, tabla de docs de contexto (incluyendo .specify/memory/constitution.md)
+├── CLAUDE.md           ← instrucciones para Claude: verificar versión al inicio de sesión, verificar init de CLAUDE.md, tabla de docs de contexto (incluyendo .specify/memory/constitution.md)
 ├── docs/
 │   ├── login.md        ← @maxi/login — Keycloak, token$, exported API, session patterns
 │   ├── mwc.md          ← Maxi Web Components — full component reference, props, events
@@ -123,6 +123,8 @@ The `docs/` folder contains context documents loaded by Claude Code when it open
 | `state.md` | Redux Toolkit in single-spa: isolated store per microfrontend, permissions slice, `usePermissions` hook, Provider setup, when to use Redux vs local state |
 
 `maxi-setup.md` also points Claude to `.specify/memory/constitution.md` (at the project root), so Claude reads the project's governance principles in addition to the platform docs.
+
+**Init check (Step 4):** `maxi-setup.md` also instructs Claude to read `CLAUDE.md` at session start and detect whether it has been initialized (i.e., contains `##` sections beyond the injected boilerplate). If not, Claude asks once whether the user wants to run `/init` before proceeding. This prevents silent degradation in projects where architecture was never documented.
 
 ### Flags
 

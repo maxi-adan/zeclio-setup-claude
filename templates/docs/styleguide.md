@@ -309,13 +309,15 @@ confirm("Are you sure?");
 - `MsButton` with `loading={true}`: when the load is a direct consequence of clicking that button.
 
 ```tsx
-// Full page load
-<MsPreload visible={isPageLoading} text="Loading data..." fullscreen />
+// Full page load — conditional rendering, no visible/fullscreen props
+{isPageLoading && (
+  <div style={{ position: 'fixed', inset: 0, zIndex: 9999 }}>
+    <MsPreload text="Loading data..." />
+  </div>
+)}
 
-// Section load
-<MsPreload visible={isSectionLoading}>
-  <MySection />
-</MsPreload>
+// Section load — conditional rendering
+{isSectionLoading && <MsPreload text="Loading..." />}
 
 // Inline load (table, card)
 {isLoading ? <MsSpinner /> : <MyContent />}  {/* default: 2rem × 2rem */}
@@ -323,6 +325,8 @@ confirm("Are you sure?");
 // Load triggered by a button action
 <MsButton label="Save" loading={isSaving} onClickEvent={handleSave} />
 ```
+
+> **⚠️ NON-NEGOTIABLE:** `MsPreload` does **not** have `visible`, `fullscreen`, or `zIndex` props. Use conditional rendering to show/hide the overlay, and a `position: fixed` wrapper to cover the full screen. Never invent props that are not in `mwc.md`.
 
 ---
 
@@ -633,15 +637,14 @@ declare module "@maxi/styleguide" {
     children: import("react").ReactNode;
   }>;
   export const MsPreload: import("react").FC<{
-    visible?: boolean;
-    text?: string;
-    fullscreen?: boolean;
-    image?: any;
+    text?: string;   // shown in overlay; ignored if image is set
+    image?: string;  // URL of custom image; takes precedence over text
     [key: string]: any;
   }>;
+  // ⚠️ MsPreload has NO visible, fullscreen, or zIndex props — use conditional rendering
   export const MsSpinner: import("react").FC<{
-    width?: string | number;
-    height?: string | number;
+    width?: string;  // CSS string, e.g. '2rem' — NOT a number
+    height?: string; // CSS string, e.g. '2rem' — NOT a number
     color?: string;
     [key: string]: any;
   }>;
@@ -666,4 +669,6 @@ export interface AppConfig {
 - **Corregir un error a la vez.** Cuando TypeScript reporta un export faltante, agregar solo ese export. No pegar la API completa de entrada.
 - **Preferir `import("pkg").Type` sobre `any` cuando el tipo está documentado** en este archivo o en `login.md`. Usar `any` solo cuando el shape no está documentado o es demasiado dinámico.
 - **Cuando un prop de componente causa `ts(2345)`, verificar primero en este documento y en `mwc.md`.** Si el nombre o valor del prop está documentado, tiparlo con precisión. Si no, ampliar solo ese prop a `any`.
+
+> **⚠️ NON-NEGOTIABLE — prop names en declaraciones TS:** Los nombres de prop deben coincidir **exactamente** con los documentados en `mwc.md`. Nunca inventar props. Si un prop no aparece en `mwc.md`, usar `[key: string]: any` como escape hatch — no agregarlo con un nombre inventado. Ejemplos de props que NO existen y no deben declararse: `visible` / `fullscreen` en `MsPreload`, `size` en `MsSpinner`.
 - **No tocar `src/models/config.d.ts` para declaraciones de módulos** — ese archivo es exclusivamente para el shape del config runtime (`AppConfig`).
