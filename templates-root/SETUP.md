@@ -4,7 +4,7 @@ Este documento describe cómo trabajar en cualquier microfrontend de ZEUS: cómo
 
 ---
 
-## 1. Cómo está cableado todo
+## 1. Cómo está organizado todo
 
 Hay un único punto de entrada: **`CLAUDE.md`**. Cada sesión de Claude Code lo carga automáticamente y desde ahí se dispara todo lo demás.
 
@@ -73,12 +73,12 @@ Para algo puntual no necesitas ningún comando. Solo pídelo directamente en el 
 
 Claude ya tiene `mwc.md` y `styleguide.md` cargados en contexto, así que usará `MsTable` con los props correctos sin que tengas que indicárselo.
 
-| Situación | Camino |
-|---|---|
-| Componente suelto, tabla, formulario pequeño | Pídelo directo en el chat |
-| Feature de una pantalla con lógica clara | Pídelo directo, sin spec |
-| Feature mediana con requisitos definidos | `/speckit-specify` + `/speckit-plan` + codear directo |
-| Feature grande con múltiples flujos y pantallas | Flujo completo: specify → plan → tasks → implement |
+| Situación                                       | Camino                                                |
+| ----------------------------------------------- | ----------------------------------------------------- |
+| Componente suelto, tabla, formulario pequeño    | Pídelo directo en el chat                             |
+| Feature de una pantalla con lógica clara        | Pídelo directo, sin spec                              |
+| Feature mediana con requisitos definidos        | `/speckit-specify` + `/speckit-plan` + codear directo |
+| Feature grande con múltiples flujos y pantallas | Flujo completo: specify → plan → tasks → implement    |
 
 El chequeo de versión y la carga de docs siempre corren — eso es transparente independientemente del camino que tomes.
 
@@ -119,12 +119,14 @@ Cada paso genera artefactos en `specs/NNN-nombre/`. SpecKit los encadena automá
 ```
 
 **Qué hace:**
+
 - Crea una rama git `NNN-feature-nombre` (hook automático `before_specify`)
 - Genera `specs/NNN-feature-nombre/spec.md` con historias de usuario, requisitos funcionales y criterios de éxito
 - Si hay ambigüedades críticas, presenta máximo 3 preguntas con opciones antes de continuar
 - Genera un checklist de calidad en `specs/.../checklists/requirements.md`
 
 **Qué NO incluye en la spec:**
+
 - Tecnologías, frameworks, nombres de componentes (eso viene en el plan)
 - La spec es agnóstica — describe QUÉ y PARA QUIÉN, no el CÓMO
 
@@ -138,11 +140,11 @@ Cada paso genera artefactos en `specs/NNN-nombre/`. SpecKit los encadena automá
 
 **Cuándo sí usarlo:**
 
-| Situación | Por qué clarificar primero |
-| --------- | ------------------------- |
-| La spec tiene marcadores `[NEEDS CLARIFICATION]` | El modelo detectó ambigüedades que necesita resolver antes de planificar |
-| La feature tiene reglas de negocio complejas que no quedaron en la spec | Evita que el plan tome decisiones técnicas incorrectas |
-| Hay múltiples enfoques válidos y quieres decidir uno antes del plan | El plan ya no tendrá que hacer suposiciones |
+| Situación                                                               | Por qué clarificar primero                                               |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| La spec tiene marcadores `[NEEDS CLARIFICATION]`                        | El modelo detectó ambigüedades que necesita resolver antes de planificar |
+| La feature tiene reglas de negocio complejas que no quedaron en la spec | Evita que el plan tome decisiones técnicas incorrectas                   |
+| Hay múltiples enfoques válidos y quieres decidir uno antes del plan     | El plan ya no tendrá que hacer suposiciones                              |
 
 **Cuándo saltarlo** (la mayoría de los casos):
 
@@ -157,6 +159,7 @@ Cada paso genera artefactos en `specs/NNN-nombre/`. SpecKit los encadena automá
 ### Paso 3 — Planificar: `/speckit-plan`
 
 **Qué hace:**
+
 - Lee `spec.md` y genera `plan.md` con contexto técnico, estructura de carpetas y contratos
 - En este punto Claude ya tiene todos los docs ZEUS en contexto, así que el plan reflejará automáticamente:
   - Imports desde `@maxi/styleguide` (nunca `maxi-react-components` directo)
@@ -177,6 +180,7 @@ Genera `specs/NNN-nombre/tasks.md` con tareas ordenadas por dependencia y marcad
 Ejecuta las tareas de `tasks.md` en orden. Marca cada tarea completada con `[X]`. Si un paso falla, detiene y reporta con contexto para depurar.
 
 Al implementar, Claude aplica automáticamente todas las reglas de CLAUDE.md:
+
 - Usa `MsTable` con `size="small"` en lugar de `<table>`
 - En columnas con acciones clicables (`MsButton`, íconos, links), siempre envolver en `<div class="ms-table-actions">` para que el click no propague al `rowClick` de la fila
 - Usa `MsInputField`, `MsDropdown`, etc. en lugar de `<input>`, `<select>`
@@ -188,18 +192,18 @@ Al implementar, Claude aplica automáticamente todas las reglas de CLAUDE.md:
 
 ## 6. Comandos disponibles (referencia rápida)
 
-| Comando                  | Cuándo usarlo                                             |
-| ------------------------ | --------------------------------------------------------- |
-| `/speckit-specify`       | **Siempre primero.** Crea la spec desde descripción libre |
-| `/speckit-clarify`       | Si la spec tiene dudas críticas sin resolver              |
-| `/speckit-plan`          | Genera el plan técnico a partir de la spec                |
-| `/speckit-tasks`         | Genera tareas ordenadas desde el plan                     |
-| `/speckit-implement`     | Ejecuta las tareas del tasks.md                           |
-| `/speckit-analyze`       | Audita consistencia entre spec, plan y tareas             |
-| `/speckit-checklist`     | Genera un checklist personalizado para la feature         |
-| `/speckit-constitution`  | Crea/actualiza los principios del proyecto                |
-| `/speckit-git-feature`   | Crea rama de feature manualmente (normally auto-hook)     |
-| `/speckit-git-commit`    | Commit automático del estado actual                       |
+| Comando                 | Cuándo usarlo                                             |
+| ----------------------- | --------------------------------------------------------- |
+| `/speckit-specify`      | **Siempre primero.** Crea la spec desde descripción libre |
+| `/speckit-clarify`      | Si la spec tiene dudas críticas sin resolver              |
+| `/speckit-plan`         | Genera el plan técnico a partir de la spec                |
+| `/speckit-tasks`        | Genera tareas ordenadas desde el plan                     |
+| `/speckit-implement`    | Ejecuta las tareas del tasks.md                           |
+| `/speckit-analyze`      | Audita consistencia entre spec, plan y tareas             |
+| `/speckit-checklist`    | Genera un checklist personalizado para la feature         |
+| `/speckit-constitution` | Crea/actualiza los principios del proyecto                |
+| `/speckit-git-feature`  | Crea rama de feature manualmente (normally auto-hook)     |
+| `/speckit-git-commit`   | Commit automático del estado actual                       |
 
 ---
 
@@ -243,33 +247,33 @@ Al terminar cualquier tarea, Claude evalúa si algo cambió en la **arquitectura
 
 ### Cuándo SÍ se actualiza
 
-| Evento | Qué se agrega en CLAUDE.md |
-|---|---|
-| Se registra un nuevo microfrontend en root-config | Nueva fila en la tabla de módulos |
-| Se establece un nuevo patrón que todos deben seguir | Nueva regla en "Reglas globales" |
-| Se descubre una restricción de la plataforma | Nueva regla en "Reglas globales" |
-| Se agrega un módulo al import map global | Nueva fila en la tabla de módulos |
+| Evento                                              | Qué se agrega en CLAUDE.md        |
+| --------------------------------------------------- | --------------------------------- |
+| Se registra un nuevo microfrontend en root-config   | Nueva fila en la tabla de módulos |
+| Se establece un nuevo patrón que todos deben seguir | Nueva regla en "Reglas globales"  |
+| Se descubre una restricción de la plataforma        | Nueva regla en "Reglas globales"  |
+| Se agrega un módulo al import map global            | Nueva fila en la tabla de módulos |
 
 ### Cuándo NO se actualiza
 
-| Situación | Razón |
-|---|---|
-| Se creó un componente dentro del microfrontend | Cambio de código, no de arquitectura — va en git |
-| Se hizo una feature completa con SpecKit | Los artefactos van en `specs/` — CLAUDE.md no es un changelog |
-| Se modificó lógica de negocio | No es información que Claude necesite en futuras sesiones |
-| Se hizo una tarea puntual (tabla, formulario) | Igual — git lo registra, no CLAUDE.md |
+| Situación                                      | Razón                                                         |
+| ---------------------------------------------- | ------------------------------------------------------------- |
+| Se creó un componente dentro del microfrontend | Cambio de código, no de arquitectura — va en git              |
+| Se hizo una feature completa con SpecKit       | Los artefactos van en `specs/` — CLAUDE.md no es un changelog |
+| Se modificó lógica de negocio                  | No es información que Claude necesite en futuras sesiones     |
+| Se hizo una tarea puntual (tabla, formulario)  | Igual — git lo registra, no CLAUDE.md                         |
 
 ---
 
 ## 11. Qué hacer cuando algo falla
 
-| Problema | Solución |
-|---|---|
-| `.claude/.version` no existe | Claude ejecuta `npx zeclio-setup-claude --force` |
-| Versión desactualizada | Claude ejecuta `npx zeclio-setup-claude@latest --force` |
-| Plan usa componentes incorrectos | Revisar `constitution.md` con las reglas ZEUS |
-| `/speckit-implement` se detiene | Revisar el error y volver a ejecutar `/speckit-implement` |
-| Spec con `[NEEDS CLARIFICATION]` | Usar `/speckit-clarify` antes de planificar |
+| Problema                         | Solución                                                  |
+| -------------------------------- | --------------------------------------------------------- |
+| `.claude/.version` no existe     | Claude ejecuta `npx zeclio-setup-claude --force`          |
+| Versión desactualizada           | Claude ejecuta `npx zeclio-setup-claude@latest --force`   |
+| Plan usa componentes incorrectos | Revisar `constitution.md` con las reglas ZEUS             |
+| `/speckit-implement` se detiene  | Revisar el error y volver a ejecutar `/speckit-implement` |
+| Spec con `[NEEDS CLARIFICATION]` | Usar `/speckit-clarify` antes de planificar               |
 
 ---
 
