@@ -3489,6 +3489,44 @@ Target the component tag (not internal classes) scoped under a container class y
 
 ---
 
+### Popup components in flex containers — popup jumping on interaction
+
+**Problem:** `MsCalendar`, `MsDropdown`, and `MsMultiselect` calculate their popup position using `getBoundingClientRect()` on the trigger element. If the trigger moves between the initial open and the next internal re-render (month navigation, date click, option hover), the popup "jumps" to a new position.
+
+**Root cause:** two compounding issues:
+1. `ms-*` elements are `display: inline` by default — imprecise bounding box for position calculation.
+2. Parent flex containers with `align-items: center` re-center all siblings when any child changes height. If the flex group containing the popup component is not height-stable, the trigger's Y coordinate changes between calculations.
+
+**Fix — Option B (CSS selector):** extend the selector with `display: block`, `position: relative`, and `flex-shrink: 0`:
+
+```css
+/* The flex group that wraps the filter controls */
+.my-filter-group {
+  align-self: flex-start; /* prevents parent align-items:center from shifting this group when height changes */
+}
+
+/* The calendar/dropdown component itself */
+.my-flex-row ms-calendar {
+  display: block;       /* correct bounding box for getBoundingClientRect() */
+  position: relative;   /* makes the host the containing block for its absolute popup */
+  width: 260px;         /* prevent shrinking when sibling elements appear */
+  flex-shrink: 0;
+}
+```
+
+**Fix — Option A (wrapper div):** the wrapper already provides `flex-shrink: 0` and stable width. Add `position: relative` to the wrapper too so the popup anchors to it:
+
+```tsx
+// ✅ wrapper div + position:relative anchors the popup to the wrapper
+<div style={{ flex: '0 0 260px', position: 'relative' }}>
+  <MsCalendar label="Fecha" onUpdate={(e) => setDate(e.detail)} />
+</div>
+```
+
+> **`align-self: flex-start` is required** on the flex group that contains the popup component whenever the parent container uses `align-items: center`. Without it, any height change in the group (which happens when the popup opens) re-centers all siblings in the row, shifting the trigger position mid-calculation.
+
+---
+
 ### Calling public methods via refs (React)
 
 Some components expose public methods (`collapse`, `expand`, `upload`). In React, use `useRef` to get the element reference and call them directly.
