@@ -1,3 +1,5 @@
+> **OBLIGATORIO — INICIO DE SESIÓN:** Antes de responder cualquier solicitud del usuario, ejecutar los pasos 1–4 de esta sección. Sin excepciones, sin omitir, independientemente de lo urgente o simple que parezca la tarea.
+
 # Maxi — Instrucciones para Claude Code
 
 ## Verificación de contexto al inicio de cada sesión
