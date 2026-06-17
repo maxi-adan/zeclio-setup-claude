@@ -17,6 +17,12 @@ const NEVER_OVERWRITE = [
   '.specify/memory/constitution.md',
 ];
 
+// Archivos del tool que siempre se sobreescriben, incluso sin --force.
+// Son instrucciones de plataforma que deben mantenerse en sincronía con cada versión.
+const ALWAYS_OVERWRITE = [
+  'maxi-setup.md',
+];
+
 const BOLD = '\x1b[1m';
 const GREEN = '\x1b[32m';
 const YELLOW = '\x1b[33m';
@@ -56,10 +62,12 @@ function main() {
     for (const templateFile of getAllFiles(srcDir)) {
       const relative = path.relative(srcDir, templateFile);
       const target = path.join(destDir, relative);
-      const alwaysOverwrite = alwaysOverwritePrefix &&
-        (relative.startsWith(alwaysOverwritePrefix + path.sep) || relative.startsWith(alwaysOverwritePrefix + '/'));
+      const relativePosix = relative.replace(/\\/g, '/');
+      const alwaysOverwrite = ALWAYS_OVERWRITE.some(p => relativePosix === p) ||
+        (alwaysOverwritePrefix &&
+          (relative.startsWith(alwaysOverwritePrefix + path.sep) || relative.startsWith(alwaysOverwritePrefix + '/')));
 
-      const neverOverwrite = NEVER_OVERWRITE.some(p => relative.replace(/\\/g, '/') === p);
+      const neverOverwrite = NEVER_OVERWRITE.some(p => relativePosix === p);
       if ((neverOverwrite || (!FORCE && !alwaysOverwrite)) && fs.existsSync(target)) {
         log('~', YELLOW, `omitido   ${relative}`);
         skipped++;
