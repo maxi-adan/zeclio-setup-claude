@@ -1049,7 +1049,7 @@ Styled radio button. `shadow: false` — external CSS penetrates.
 
 #### `ms-control-number`
 
-Integer stepper with + and − buttons. Uses **`shadow: true`** — styles are encapsulated; CSS custom properties do not pierce the shadow DOM.
+Integer stepper with + and − buttons. Uses **`shadow: true`** — element styles are encapsulated. However, CSS custom properties **do** cascade into shadow DOM — the component exposes `--ms-cn-width` and other theming variables that can be set from outside.
 
 > **Input restriction:** keyboard input accepts only non-negative integers (digits 0–9). Negative values are reachable via the − button only if `min` is negative; you cannot type a minus sign. Empty input falls back to `min` (or `0` if `min` is unset).
 
@@ -1065,6 +1065,13 @@ Integer stepper with + and − buttons. Uses **`shadow: true`** — styles are e
 | `errorMessage` | `error-message`  | `string \| null`   | `null`  | Error text below — only visible when `error=true`                        |
 | `customClass`  | `custom-class`   | `string`           | —       | Extra CSS class applied to the host wrapper                              |
 
+**CSS custom properties (set on the host element — cascade into shadow DOM):**
+
+| Variable           | Default   | Description                                           |
+| ------------------ | --------- | ----------------------------------------------------- |
+| `--ms-cn-width`    | `160px`   | Total width of the control (buttons + input combined) |
+| `--ms-cn-input-height` | `40px` | Height of the control row                            |
+
 **Events:**
 
 | Event         | Payload  | Fires when                                                              |
@@ -1073,7 +1080,7 @@ Integer stepper with + and − buttons. Uses **`shadow: true`** — styles are e
 | `inputEvent`  | `number` | On every value change, including individual keystrokes while typing     |
 
 ```tsx
-// React
+// React — basic usage
 <MsControlNumber
   label="Cantidad"
   min={1}
@@ -1082,6 +1089,38 @@ Integer stepper with + and − buttons. Uses **`shadow: true`** — styles are e
   onChangeEvent={(e) => setQty(e.detail)}
 />
 ```
+
+**Full-width pattern in grid/flex layouts:**
+
+The `:host` defaults to `display: inline-block` and `--ms-cn-width: 160px`. To make the control fill a grid column or flex item, override both from outside — CSS custom properties cascade through the shadow boundary:
+
+```css
+/* Wrapper div takes the full column width */
+.my-wrapper {
+  width: 100%;
+}
+
+/* Override host display + pass --ms-cn-width into the shadow */
+.my-wrapper ms-control-number {
+  display: block;       /* overrides shadow :host display: inline-block */
+  width: 100%;
+  --ms-cn-width: 100%;  /* cascades into shadow → .ms-cn-field uses this var */
+}
+```
+
+```tsx
+// React — full-width MsControlNumber in a grid field
+<div className="my-wrapper">
+  <MsControlNumber
+    value={ficoScore}
+    min={0}
+    max={850}
+    onChangeEvent={(e) => setFicoScore(e.detail)}
+  />
+</div>
+```
+
+> **Why this works:** CSS custom properties (CSS variables) are inherited properties — they cascade across shadow DOM boundaries by design. The internal `.ms-cn-field` div uses `width: var(--ms-cn-width)`, so setting `--ms-cn-width: 100%` on the host element makes the field fill the host. External author styles also override shadow `:host()` rules per the CSS shadow cascade specification.
 
 ---
 
