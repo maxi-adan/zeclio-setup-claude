@@ -103,6 +103,8 @@ SETUP.md                                ← Guía de flujo de trabajo ZEUS (Spec
 └── (resto de .specify/)                ← Config de SpecKit: templates, scripts, extensions, workflows
 ```
 
+> Al correr `/speckit-specify`, Claude pregunta el tipo de rama (`feat` o `fix`) antes de crearla. La rama resultante sigue el patrón `feat/NNN-nombre` o `fix/NNN-nombre`.
+
 > `SETUP.md` y `constitution.md` solo se crean si no existen — en re-ejecuciones se respetan los cambios del proyecto.
 
 ### En `CLAUDE.md`

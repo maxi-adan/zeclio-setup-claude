@@ -84,7 +84,7 @@ templates/
 │   └── state.md        ← Redux Toolkit in single-spa: store, permissions slice, usePermissions hook
 ├── settings.json
 └── skills/
-    └── speckit-*/SKILL.md
+    └── speckit-*/SKILL.md   ← speckit-git-feature pregunta feat/fix antes de crear la rama y la nombra feat/NNN-nombre o fix/NNN-nombre
 ```
 
 #### `templates-root/` → project root (`./`)

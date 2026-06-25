@@ -570,6 +570,11 @@ Each command produces an artifact the next one uses as input. You can't skip ste
 **What it does:**
 Converts your natural language description into a formal functional specification. Claude writes it to `specs/NNN-feature-name/spec.md`.
 
+Before creating the branch, Claude asks:
+> "¿Qué tipo de rama querés crear? `feat` — nueva funcionalidad / `fix` — corrección de bug"
+
+The branch is created as `feat/NNN-feature-name` or `fix/NNN-fix-name` depending on your answer.
+
 The spec is written for non-technical stakeholders — it describes **what** the feature does and **for whom**, without implementation details. Includes: actors, user scenarios, functional requirements, measurable success criteria.
 
 **How you interact:**

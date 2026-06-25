@@ -26,6 +26,16 @@ If the user explicitly provided `GIT_BRANCH_NAME` (e.g., via environment variabl
 - Verify Git is available by running `git rev-parse --is-inside-work-tree 2>/dev/null`
 - If Git is not available, warn the user and skip branch creation
 
+## Branch Type Selection
+
+**Before running any script**, ask the user:
+
+> "¿Qué tipo de rama querés crear?
+> `feat` — nueva funcionalidad
+> `fix` — corrección de bug"
+
+Wait for the user's answer. Accept `feat`, `feature`, `fix`, or `bugfix` — normalize to `feat` or `fix` respectively. Store this as `BRANCH_TYPE`.
+
 ## Branch Numbering Mode
 
 Determine the branch numbering strategy by checking configuration in this order:
@@ -54,6 +64,14 @@ Run the appropriate script based on your platform:
 - You must only ever run this script once per feature
 - The JSON output will contain `BRANCH_NAME` and `FEATURE_NUM`
 
+After the script creates the branch (e.g., `003-user-auth`), rename it to include the type prefix:
+
+```bash
+git branch -m <BRANCH_NAME> <BRANCH_TYPE>/<BRANCH_NAME>
+```
+
+Update `BRANCH_NAME` to `<BRANCH_TYPE>/<BRANCH_NAME>` (e.g., `feat/003-user-auth` or `fix/003-payment-bug`).
+
 ## Graceful Degradation
 
 If Git is not installed or the current directory is not a Git repository:
@@ -63,5 +81,5 @@ If Git is not installed or the current directory is not a Git repository:
 ## Output
 
 The script outputs JSON with:
-- `BRANCH_NAME`: The branch name (e.g., `003-user-auth` or `20260319-143022-user-auth`)
-- `FEATURE_NUM`: The numeric or timestamp prefix used
+- `BRANCH_NAME`: The branch name with type prefix (e.g., `feat/003-user-auth` or `fix/20260319-143022-payment-bug`)
+- `FEATURE_NUM`: The numeric or timestamp prefix used (e.g., `003` or `20260319-143022`)

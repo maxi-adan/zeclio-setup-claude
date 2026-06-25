@@ -120,7 +120,7 @@ Cada paso genera artefactos en `specs/NNN-nombre/`. SpecKit los encadena automá
 
 **Qué hace:**
 
-- Crea una rama git `NNN-feature-nombre` (hook automático `before_specify`)
+- Pregunta qué tipo de rama querés crear (`feat` o `fix`) y luego crea la rama con el prefijo correspondiente: `feat/NNN-feature-nombre` o `fix/NNN-fix-nombre` (hook automático `before_specify`)
 - Genera `specs/NNN-feature-nombre/spec.md` con historias de usuario, requisitos funcionales y criterios de éxito
 - Si hay ambigüedades críticas, presenta máximo 3 preguntas con opciones antes de continuar
 - Genera un checklist de calidad en `specs/.../checklists/requirements.md`
@@ -232,10 +232,10 @@ specs/
 
 ## 9. Git — ramas y commits automáticos
 
-| Evento                      | Hook             | Efecto                         |
-| --------------------------- | ---------------- | ------------------------------ |
-| Antes de `/speckit-specify` | `before_specify` | Crea rama `NNN-feature-nombre` |
-| Después de cada comando     | `after_*`        | Propone commit automático      |
+| Evento                      | Hook             | Efecto                                                        |
+| --------------------------- | ---------------- | ------------------------------------------------------------- |
+| Antes de `/speckit-specify` | `before_specify` | Pregunta tipo (`feat`/`fix`) y crea rama `feat/NNN-nombre` o `fix/NNN-nombre` |
+| Después de cada comando     | `after_*`        | Propone commit automático                                     |
 
 El hook `before_specify` es **obligatorio** — siempre crea la rama antes de crear la spec. Los hooks `after_*` son **opcionales** — pregunta antes de hacer commit.
 
