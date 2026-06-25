@@ -57,18 +57,37 @@ function main() {
   let copied = 0;
   let skipped = 0;
 
-  function processTemplates(srcDir, destDir, alwaysOverwritePrefix) {
+  // alwaysOverwritePrefixes: '*' sobreescribe todo, o array de prefijos de ruta posix.
+  // NEVER_OVERWRITE siempre tiene prioridad máxima (ni --force ni '*' lo tocan).
+  function processTemplates(srcDir, destDir, alwaysOverwritePrefixes) {
     if (!fs.existsSync(srcDir)) return;
+    const prefixes = Array.isArray(alwaysOverwritePrefixes)
+      ? alwaysOverwritePrefixes
+      : alwaysOverwritePrefixes ? [alwaysOverwritePrefixes] : [];
+    const overwriteAll = prefixes.includes('*');
+
     for (const templateFile of getAllFiles(srcDir)) {
       const relative = path.relative(srcDir, templateFile);
       const target = path.join(destDir, relative);
       const relativePosix = relative.replace(/\\/g, '/');
-      const alwaysOverwrite = ALWAYS_OVERWRITE.some(p => relativePosix === p) ||
-        (alwaysOverwritePrefix &&
-          (relative.startsWith(alwaysOverwritePrefix + path.sep) || relative.startsWith(alwaysOverwritePrefix + '/')));
 
       const neverOverwrite = NEVER_OVERWRITE.some(p => relativePosix === p);
-      if ((neverOverwrite || (!FORCE && !alwaysOverwrite)) && fs.existsSync(target)) {
+      if (neverOverwrite && fs.existsSync(target)) {
+        log('~', YELLOW, `omitido   ${relative}`);
+        skipped++;
+        continue;
+      }
+
+      const alwaysOverwrite = overwriteAll ||
+        ALWAYS_OVERWRITE.some(p => relativePosix === p) ||
+        prefixes.some(prefix =>
+          prefix !== '*' && (
+            relative.startsWith(prefix + path.sep) ||
+            relativePosix.startsWith(prefix + '/')
+          )
+        );
+
+      if (!FORCE && !alwaysOverwrite && fs.existsSync(target)) {
         log('~', YELLOW, `omitido   ${relative}`);
         skipped++;
         continue;
@@ -84,8 +103,16 @@ function main() {
     }
   }
 
-  processTemplates(TEMPLATES_DIR, TARGET_DIR, 'docs');
-  processTemplates(TEMPLATES_ROOT_DIR, TARGET_ROOT_DIR, null);
+  // templates/ → .claude/: todos los archivos son de plataforma, siempre se actualizan
+  processTemplates(TEMPLATES_DIR, TARGET_DIR, '*');
+
+  // templates-root/ → ./: solo se copian si no existen, excepto los scripts y
+  // comandos del git-extension que son de plataforma y deben mantenerse al día
+  processTemplates(TEMPLATES_ROOT_DIR, TARGET_ROOT_DIR, [
+    '.specify/extensions/git/scripts',
+    '.specify/extensions/git/commands',
+    '.specify/extensions/git/extension.yml',
+  ]);
 
   if (!DRY_RUN) {
     const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf-8'));

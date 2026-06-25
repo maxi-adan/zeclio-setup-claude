@@ -56,15 +56,19 @@ After the copy loop, `main()` runs two **CLAUDE.md injections** regardless of `-
 1. **`@.claude/maxi-setup.md` reference** — appended once if not already present; creates `CLAUDE.md` if it doesn't exist yet.
 2. **Maintenance rule** — appended once if the marker `'Al terminar cualquier tarea'` is not found. Instructs Claude to update `CLAUDE.md` whenever the project architecture changes (new routes, modules, patterns, rules). Idempotent.
 
-`processTemplates(srcDir, destDir, alwaysOverwritePrefix)` does the following:
+`processTemplates(srcDir, destDir, alwaysOverwritePrefixes)` does the following:
 
 1. Walks `srcDir` recursively with `getAllFiles()` to get a flat list of files
 2. For each file, computes the relative path from the source root and the corresponding target path under `destDir`
-3. If `--force` is not set and `alwaysOverwritePrefix` doesn't match and the target exists → logs `~  omitido` and skips
-4. Otherwise → creates parent directories with `mkdirSync({ recursive: true })`, copies the file, logs `+  copiado`
-5. If `--dry-run` is set → steps 3–4 run without writing anything
+3. `NEVER_OVERWRITE` check (highest priority, beats `--force` and `'*'`): if the relative path is in the `NEVER_OVERWRITE` list and the target exists → logs `~  omitido` and skips
+4. `alwaysOverwrite` check: true when `alwaysOverwritePrefixes === '*'`, OR the file is in the `ALWAYS_OVERWRITE` list, OR the relative path starts with one of the prefix strings
+5. If `--force` is not set and `alwaysOverwrite` is false and the target exists → logs `~  omitido` and skips
+6. Otherwise → creates parent directories with `mkdirSync({ recursive: true })`, copies the file, logs `+  copiado`
+7. If `--dry-run` is set → steps 3–6 run without writing anything
 
-**Special rule for `docs/`:** files under `templates/docs/` always overwrite the target — no `--force` needed. This ensures docs stay up to date every time `npx zeclio-setup-claude` runs.
+**`alwaysOverwritePrefixes` values per call:**
+- `templates/` → `.claude/`: called with `'*'` — todos los archivos de `.claude/` son de plataforma y siempre se actualizan sin `--force`
+- `templates-root/` → `./`: called with `['.specify/extensions/git/scripts', '.specify/extensions/git/commands', '.specify/extensions/git/extension.yml']` — los scripts y comandos del git-extension siempre se actualizan; el resto solo se crea si no existe
 
 ### Templates
 
