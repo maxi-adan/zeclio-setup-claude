@@ -335,11 +335,14 @@ npx zeclio-setup-claude
 
 | Archivo | Comportamiento |
 |---|---|
-| `.claude/docs/*.md` | **Siempre se sobreescribe** — recibe la versión más reciente |
-| Resto de archivos en `.claude/` | Solo se copia si no existe todavía — nunca sobreescribe |
-| `SETUP.md` en la raíz | Solo se copia si no existe todavía |
-| `.specify/memory/constitution.md` | Solo se copia si no existe todavía |
-| `CLAUDE.md` | Se inyectan dos bloques si todavía no están presentes (idempotente) |
+| Todo en `.claude/` (docs, skills, maxi-setup, settings) | **Siempre se sobreescribe** — todos son archivos de plataforma |
+| `.specify/extensions/git/scripts/*` | **Siempre se sobreescribe** — scripts de plataforma |
+| `.specify/extensions/git/commands/*` | **Siempre se sobreescribe** — comandos de plataforma |
+| `.specify/extensions/git/extension.yml` | **Siempre se sobreescribe** — config de plataforma |
+| `SETUP.md` en la raíz | Solo se copia si no existe todavía — nunca sobreescribe |
+| `.specify/memory/constitution.md` | Solo se copia si no existe todavía — nunca sobreescribe |
+| `.specify/extensions.yml`, `init-options.json`, `git-config.yml` | Solo se copia si no existe todavía |
+| `CLAUDE.md` | Se inyectan bloques si todavía no están presentes (idempotente) |
 
 > Si querés resetear todos los archivos a sus valores de template (no solo los docs), corrés:
 > ```powershell
@@ -569,6 +572,13 @@ Cada comando produce un artefacto que el siguiente usa como input. No podés sal
 
 **Qué hace:**
 Convierte tu descripción en lenguaje natural en una especificación funcional formal. Claude la escribe en `specs/NNN-nombre-feature/spec.md`.
+
+Antes de crear la rama, Claude te hace **dos preguntas obligatorias en secuencia**:
+
+1. **Tipo de rama:** `feat` (nueva funcionalidad) o `fix` (corrección de bug)
+2. **Nombre de la rama:** muestra una sugerencia basada en la descripción y espera que confirmes o escribas otro nombre
+
+La rama se crea como `feat/NNN-nombre` o `fix/NNN-nombre` según tus respuestas.
 
 La spec está escrita para stakeholders no técnicos — describe **qué** hace la feature y **para quién**, sin detalles de implementación. Incluye: actores, escenarios de usuario, requisitos funcionales, criterios de éxito medibles.
 

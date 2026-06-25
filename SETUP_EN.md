@@ -335,11 +335,14 @@ npx zeclio-setup-claude
 
 | File | Behavior |
 |---|---|
-| `.claude/docs/*.md` | **Always overwritten** — receives the latest version |
-| Other files in `.claude/` | Only copied if they don't exist yet — never overwritten |
-| `SETUP.md` at the root | Only copied if it doesn't exist yet |
-| `.specify/memory/constitution.md` | Only copied if it doesn't exist yet |
-| `CLAUDE.md` | Two blocks are injected if not already present (idempotent) |
+| Everything in `.claude/` (docs, skills, maxi-setup, settings) | **Always overwritten** — all platform-managed files |
+| `.specify/extensions/git/scripts/*` | **Always overwritten** — platform scripts |
+| `.specify/extensions/git/commands/*` | **Always overwritten** — platform commands |
+| `.specify/extensions/git/extension.yml` | **Always overwritten** — platform config |
+| `SETUP.md` at the root | Only copied if it doesn't exist yet — never overwritten |
+| `.specify/memory/constitution.md` | Only copied if it doesn't exist yet — never overwritten |
+| `.specify/extensions.yml`, `init-options.json`, `git-config.yml` | Only copied if they don't exist yet |
+| `CLAUDE.md` | Blocks are injected if not already present (idempotent) |
 
 > If you want to reset all files to their template values (not just docs), run:
 > ```powershell
@@ -570,10 +573,12 @@ Each command produces an artifact the next one uses as input. You can't skip ste
 **What it does:**
 Converts your natural language description into a formal functional specification. Claude writes it to `specs/NNN-feature-name/spec.md`.
 
-Before creating the branch, Claude asks:
-> "¿Qué tipo de rama querés crear? `feat` — nueva funcionalidad / `fix` — corrección de bug"
+Before creating the branch, Claude asks **two mandatory questions in sequence**:
 
-The branch is created as `feat/NNN-feature-name` or `fix/NNN-fix-name` depending on your answer.
+1. **Branch type:** `feat` (new feature) or `fix` (bug fix)
+2. **Branch name:** shows a suggested name based on your description and waits for you to confirm or provide a different one
+
+The branch is created as `feat/NNN-name` or `fix/NNN-name` based on your answers.
 
 The spec is written for non-technical stakeholders — it describes **what** the feature does and **for whom**, without implementation details. Includes: actors, user scenarios, functional requirements, measurable success criteria.
 

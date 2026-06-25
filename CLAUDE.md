@@ -48,8 +48,8 @@ node /path/to/zeclio-setup-claude.js --dry-run
 
 | Source | Destination | Always overwrites |
 |---|---|---|
-| `templates/` | `cwd()/.claude/` | `docs/**` |
-| `templates-root/` | `cwd()/` (project root) | nothing (skip if exists) |
+| `templates/` | `cwd()/.claude/` | everything (`*`) — all files are platform-managed |
+| `templates-root/` | `cwd()/` (project root) | `.specify/extensions/git/scripts/**`, `.specify/extensions/git/commands/**`, `.specify/extensions/git/extension.yml` |
 
 After the copy loop, `main()` runs two **CLAUDE.md injections** regardless of `--force`:
 
@@ -107,7 +107,9 @@ templates-root/
 
 **Files intentionally excluded from templates:** `settings.local.json` — project-specific, must never be overwritten.
 
-**Files never overwritten by `processTemplates`:** `SETUP.md` and `.specify/memory/constitution.md` live in `templates-root/` with no `alwaysOverwritePrefix`, so they are created once and left alone on subsequent runs. Use `--force` to reset them to template defaults.
+**Files never overwritten by `processTemplates`:** `SETUP.md` and `.specify/memory/constitution.md` are in the `NEVER_OVERWRITE` list — created once and left alone on every subsequent run, even with `--force`.
+
+**All other files in `templates/` always overwrite** on every `npx zeclio-setup-claude` run (no `--force` needed). This includes `skills/`, `maxi-setup.md`, `settings.json`, and `docs/`.
 
 **CLAUDE.md is not a template file** — it is written/patched by the injection logic at the end of `main()`, not by `processTemplates()`. Adding content to `CLAUDE.md` requires editing the injection block in `zeclio-setup-claude.js`, not dropping a file in `templates-root/`.
 
