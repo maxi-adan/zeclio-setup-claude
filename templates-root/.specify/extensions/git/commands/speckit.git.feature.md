@@ -28,18 +28,26 @@ If the user explicitly provided `GIT_BRANCH_NAME` (e.g., via environment variabl
 
 ## Branch Type Selection
 
-**Before running any script**, ask the user both things in a single prompt:
+**Before running any script**, collect two mandatory inputs from the user. Ask them sequentially:
 
-> "¿Qué tipo de rama y qué nombre le querés dar?
->
-> **Tipo:** `feat` — nueva funcionalidad · `fix` — corrección de bug
-> **Nombre:** 2-4 palabras en kebab-case, ej. `user-auth`, `payment-timeout`
-> _(Si no escribís nombre, lo genero automáticamente desde la descripción)_"
+**Step A — Type (required):**
 
-Wait for the user's answer. Parse the response:
+> "¿Qué tipo de rama es?
+> `feat` — nueva funcionalidad
+> `fix` — corrección de bug"
 
-- **BRANCH_TYPE**: Accept `feat`, `feature`, `fix`, or `bugfix` — normalize to `feat` or `fix` respectively.
-- **BRANCH_SHORT_NAME**: If the user provided a name, clean it to kebab-case and use it as the `--short-name` argument. If not provided, leave it empty and let the script auto-generate it from the feature description.
+Wait for the answer. Normalize to `feat` or `fix`. Store as `BRANCH_TYPE`.
+
+**Step B — Name (required):**
+
+Based on the feature description, generate a suggested short name (2-4 words, kebab-case, action-noun format). Then ask:
+
+> "¿Cómo la llamamos? Sugerencia: `<suggested-name>`
+> (Confirmá con enter o escribí otro nombre)"
+
+Wait for the answer. If the user confirms the suggestion (presses enter, writes "ok", "sí", or repeats the suggestion), use the suggestion. Otherwise use what the user wrote. Clean to kebab-case. Store as `BRANCH_SHORT_NAME`.
+
+**Do NOT proceed to the script until both BRANCH_TYPE and BRANCH_SHORT_NAME are confirmed.**
 
 ## Branch Numbering Mode
 
