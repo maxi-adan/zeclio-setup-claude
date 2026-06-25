@@ -33,13 +33,18 @@ If the user explicitly provided `GIT_BRANCH_NAME` (e.g., via environment variabl
 
 ## Branch Type Selection
 
-**Before running any script**, ask the user:
+**Before running any script**, ask the user both things in a single prompt:
 
-> "¿Qué tipo de rama querés crear?
-> `feat` — nueva funcionalidad
-> `fix` — corrección de bug"
+> "¿Qué tipo de rama y qué nombre le querés dar?
+>
+> **Tipo:** `feat` — nueva funcionalidad · `fix` — corrección de bug
+> **Nombre:** 2-4 palabras en kebab-case, ej. `user-auth`, `payment-timeout`
+> _(Si no escribís nombre, lo genero automáticamente desde la descripción)_"
 
-Wait for the user's answer. Accept `feat`, `feature`, `fix`, or `bugfix` — normalize to `feat` or `fix` respectively. Store this as `BRANCH_TYPE`.
+Wait for the user's answer. Parse the response:
+
+- **BRANCH_TYPE**: Accept `feat`, `feature`, `fix`, or `bugfix` — normalize to `feat` or `fix` respectively.
+- **BRANCH_SHORT_NAME**: If the user provided a name, clean it to kebab-case and use it as the `--short-name` argument. If not provided, leave it empty and let the script auto-generate it from the feature description.
 
 ## Branch Numbering Mode
 
@@ -51,17 +56,18 @@ Determine the branch numbering strategy by checking configuration in this order:
 
 ## Execution
 
-Generate a concise short name (2-4 words) for the branch:
-- Analyze the feature description and extract the most meaningful keywords
+If `BRANCH_SHORT_NAME` was not provided by the user, generate a concise short name (2-4 words) from the feature description:
 - Use action-noun format when possible (e.g., "add-user-auth", "fix-payment-bug")
 - Preserve technical terms and acronyms (OAuth2, API, JWT, etc.)
 
+Use `BRANCH_SHORT_NAME` (user-provided or auto-generated) as the `--short-name` / `-ShortName` argument.
+
 Run the appropriate script based on your platform:
 
-- **Bash**: `.specify/extensions/git/scripts/bash/create-new-feature.sh --json --short-name "<short-name>" "<feature description>"`
-- **Bash (timestamp)**: `.specify/extensions/git/scripts/bash/create-new-feature.sh --json --timestamp --short-name "<short-name>" "<feature description>"`
-- **PowerShell**: `.specify/extensions/git/scripts/powershell/create-new-feature.ps1 -Json -ShortName "<short-name>" "<feature description>"`
-- **PowerShell (timestamp)**: `.specify/extensions/git/scripts/powershell/create-new-feature.ps1 -Json -Timestamp -ShortName "<short-name>" "<feature description>"`
+- **Bash**: `.specify/extensions/git/scripts/bash/create-new-feature.sh --json --short-name "<BRANCH_SHORT_NAME>" "<feature description>"`
+- **Bash (timestamp)**: `.specify/extensions/git/scripts/bash/create-new-feature.sh --json --timestamp --short-name "<BRANCH_SHORT_NAME>" "<feature description>"`
+- **PowerShell**: `.specify/extensions/git/scripts/powershell/create-new-feature.ps1 -Json -ShortName "<BRANCH_SHORT_NAME>" "<feature description>"`
+- **PowerShell (timestamp)**: `.specify/extensions/git/scripts/powershell/create-new-feature.ps1 -Json -Timestamp -ShortName "<BRANCH_SHORT_NAME>" "<feature description>"`
 
 **IMPORTANT**:
 - Do NOT pass `--number` — the script determines the correct next number automatically
