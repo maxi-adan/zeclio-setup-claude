@@ -189,6 +189,22 @@ private calculateMenuPosition() {
 
 ---
 
+### CSS global en ZEUS — ya incluido en `@maxi/styleguide`
+
+**No importar** `global.css` ni `global-zeclio.css` en ningún microfrontend ZEUS. El módulo `@maxi/styleguide` importa `global-zeclio.css` al arrancar el single-spa, antes de que cualquier app se monte. Todas las variables `--maxi-*` ya están disponibles en el DOM.
+
+```tsx
+// ❌ INCORRECTO en ZEUS — doble importación, puede generar conflictos
+import "maxi-web-components/global.css";
+import "maxi-web-components/global-zeclio.css";
+
+// ✅ CORRECTO en ZEUS — no agregar nada en main.tsx / index.tsx
+```
+
+Para overrides de variables o clases internas, ver [Sección 3 — CSS variables reference](#3-theming-system-and-css-variables).
+
+---
+
 ---
 
 ## Table of Contents
@@ -449,15 +465,17 @@ The library uses CSS Custom Properties (variables) for theming, defined on `:roo
 | File                                    | When to use                   |
 | --------------------------------------- | ----------------------------- |
 | `maxi-web-components/global.css`        | Base theme (standard project) |
-| `maxi-web-components/global-zeclio.css` | Zeclio theme                  |
+| `maxi-web-components/global-zeclio.css` | Zeclio theme (ZEUS)           |
 
-**Ways to import the theme:**
+> **En proyectos ZEUS — no importar nada.** El módulo `@maxi/styleguide` ya importa `global-zeclio.css` a nivel de single-spa, antes de que cualquier microfrontend se monte. Importarlo en el microfrontend genera una doble carga y puede producir conflictos.
+
+**Ways to import the theme (standalone / non-ZEUS projects only):**
 
 ```javascript
 // In JS/TS (React, bundler, Vite, Webpack)
-// or
-import "maxi-web-components/global-zeclio.css";
 import "maxi-web-components/global.css";
+// or Zeclio theme:
+import "maxi-web-components/global-zeclio.css";
 ```
 
 ```scss
@@ -474,49 +492,94 @@ import "maxi-web-components/global.css";
 ]
 ```
 
-**Main color variables:**
+### CSS variables reference (`--maxi-*`)
+
+Every component consumes CSS custom properties defined in `global.css` / `global-zeclio.css`. In ZEUS these variables are already available in the full DOM via the styleguide. Override them in your project's global stylesheet to change component appearance without touching component code.
+
+**Color palette (actual values from `global-zeclio.css`):**
 
 ```css
 :root {
-  --maxi-color-primary: #007bff;
-  --maxi-color-primary-hover: #0056b3;
-  --maxi-color-secondary: #6c757d;
-  --maxi-color-success: #28a745;
-  --maxi-color-warning: #ffc107;
-  --maxi-color-danger: #dc3545;
-  --maxi-color-info: #17a2b8;
+  --maxi-color-primary: #043F8F;
+  --maxi-color-secondary: #AAD156;       /* accent / active states */
+  --maxi-color-action-button: #458C44;
+  --maxi-color-white: #FFFFFF;
+  --maxi-color-disabled: #777777;
+  --maxi-color-info: #CFE2FF;            /* info background */
+  --maxi-color-info-text: #0252BF;
+  --maxi-color-success: #ECF4EC;         /* success background */
+  --maxi-color-success-text: #1A7832;
+  --maxi-color-warning: #FCF5EA;         /* warning background */
+  --maxi-color-warning-text: #965F0B;
+  --maxi-color-alert: #F4CFCF;           /* danger background */
+  --maxi-color-alert-text: #911E1E;
 }
 ```
 
-**Button variables:**
+**Per-component override variables:**
+
+| Group | Variable | Default |
+|---|---|---|
+| **Inputs** | `--maxi-input-border-color` | `#E0E1E0` |
+| | `--maxi-input-focus-border-color` | `#006CFF` |
+| | `--maxi-input-invalid-border-color` | `#C81010` |
+| | `--maxi-input-label-color` | `#2C2B2C` |
+| | `--maxi-input-disabled-background` | `#F5F5F5` |
+| | `--maxi-input-dropdown-hover-background` | `#E8F4EA` |
+| | `--maxi-input-dropdown-active-background-color` | `#C3DF89` |
+| **Button** | `--maxi-button-primary-background` | `var(--maxi-color-primary)` |
+| | `--maxi-button-primary-hover-background` | `#133787` |
+| | `--maxi-button-success-background` | `var(--maxi-color-action-button)` |
+| | `--maxi-button-alert-background` | `#C81010` |
+| | `--maxi-button-warning-background` | `#F0C42B` |
+| | `--maxi-button-disabled-background` | `var(--maxi-color-disabled)` |
+| **Tooltip** | `--maxi-tooltip-background` | `var(--maxi-color-secondary)` |
+| | `--maxi-tooltip-text-color` | `#000000` |
+| | `--maxi-tooltip-font-weight` | `500` |
+| **Accordion** | `--maxi-accordion-header-background` | `var(--maxi-color-secondary)` |
+| | `--maxi-accordion-header-text-color` | `var(--maxi-color-primary)` |
+| | `--maxi-accordion-content-text-color` | `#131313` |
+| **Badge** | `--maxi-badge-info-background` | `var(--maxi-color-info)` |
+| | `--maxi-badge-success-background` | `var(--maxi-color-success)` |
+| | `--maxi-badge-warning-background` | `var(--maxi-color-warning)` |
+| | `--maxi-badge-alert-background` | `var(--maxi-color-alert)` |
+| **Table** | `--maxi-table-header-background` | `#3577D2` |
+| | `--maxi-table-header-text-color` | `var(--maxi-color-white)` |
+| | `--maxi-table-border-color` | `#b4b4b4` |
+| **Calendar** | `--maxi-calendar-active-background-color` | `var(--maxi-color-secondary)` |
+| | `--maxi-calendar-today-background` | `var(--maxi-color-action-button)` |
+| | `--maxi-calendar-arrow-color` | `#006CFF` |
+| **Chips** | `--maxi-chips-background` | `#F0F5FF` |
+| | `--maxi-chips-input-border-color` | `#376BCF` |
+| **Popover** | `--maxi-popover-bg` | `var(--maxi-color-white)` |
+| | `--maxi-popover-border` | `#e2e8f0` |
+| | `--maxi-popover-shadow` | `0 4px 12px rgba(0,0,0,0.15)` |
+| **Menubar** | `--maxi-menubar-background` | `var(--maxi-color-primary)` |
+| | `--maxi-menubar-hover-background` | `var(--maxi-color-secondary)` |
+| **Carousel** | `--maxi-carousel-nav-background` | `var(--maxi-color-action-button)` |
+
+**How to override — global vs scoped (recommended pattern in ZEUS):**
 
 ```css
+/* In src/index.css or src/styles.scss of the microfrontend */
+
+/* Global override — affects all instances in this project */
 :root {
-  --maxi-button-primary-bg: var(--maxi-color-primary);
-  --maxi-button-primary-hover: var(--maxi-color-primary-hover);
-  --maxi-button-secondary-bg: var(--maxi-color-secondary);
-  --maxi-button-warning-bg: var(--maxi-color-warning);
-  --maxi-button-alert-bg: var(--maxi-color-danger);
+  --maxi-table-header-background: #1a2d5a;
+}
+
+/* Scoped override — affects only the instance with this class (recommended) */
+.my-custom-table {
+  --maxi-table-header-background: #2d5a3d;
 }
 ```
 
-**Input variables:**
-
-```css
-:root {
-  --maxi-input-focus-border-color: var(--maxi-color-primary);
-}
+```tsx
+/* Pass the class prop to scope the variable override */
+<MsTable class="my-custom-table" columns={columns} data={rows} size="small" />
 ```
 
-**Customizing the theme in your project:**
-
-```css
-/* project styles.scss or global.css */
-:root {
-  --maxi-color-primary: #8b5cf6;
-  --maxi-color-primary-hover: #7c3aed;
-}
-```
+> Use `class` or `customClass` on the component — never target internal component classes globally (e.g. `.ms-table-header`) as it affects all instances. See [Section 7 — Advanced patterns](#7-advanced-patterns) for the full scoping rule.
 
 ---
 
@@ -1919,6 +1982,40 @@ Off-canvas panel (drawer) that slides in from any edge of the screen. `shadow: f
 >
   <p>Drawer content here</p>
 </MsSidebar>
+```
+
+> **⚠️ ZEUS — `removeChild` crash:** El overlay (`ms-sidebar-overlay`) usa renderizado condicional en Stencil y puede lanzar `NotFoundError: removeChild` en race conditions durante el ciclo de vida de single-spa. El panel en sí es seguro; solo el overlay tiene el problema. Fix pendiente en la librería (ver [removeChild en componentes con popup/overlay](#removechild-en-componentes-con-popupoverlay--estado-de-la-librería)). **Workaround:** implementar el panel lateral como `<aside>` nativo con `position: fixed` en lugar de `MsSidebar`.
+
+```tsx
+// Workaround ZEUS — panel lateral sin MsSidebar para evitar el crash
+const [open, setOpen] = useState(false);
+
+<>
+  {/* Overlay semitransparente */}
+  {open && (
+    <div
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 999 }}
+      onClick={() => setOpen(false)}
+    />
+  )}
+  <aside
+    style={{
+      position: 'fixed',
+      top: 0,
+      right: open ? 0 : '-420px',
+      width: '400px',
+      height: '100vh',
+      background: 'white',
+      boxShadow: '-4px 0 16px rgba(0,0,0,0.15)',
+      transition: 'right 0.3s ease',
+      zIndex: 1000,
+      overflow: 'auto',
+      padding: '1.5rem',
+    }}
+  >
+    <p>Contenido del panel</p>
+  </aside>
+</>
 ```
 
 ---

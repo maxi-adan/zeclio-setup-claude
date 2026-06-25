@@ -792,6 +792,8 @@ ZEUS exceptions are component behaviors that differ from the default when used i
 | `MsTable` | Columns with numeric values (money, quantities, percentages) always use `align: 'right'` and `alignHeader: 'right'`. | ZEUS visual standard — numbers are right-aligned. |
 | `MsTable` | Always use `size="small"`. | The default `"normal"` produces rows that are too tall for ZEUS designs. |
 | `MsTable` | Any clickable element inside a cell (`render`) **must** be wrapped in `<div class="ms-table-actions">`. | Without this class, the click propagates to the row and triggers `rowClick` or the expand toggle. This behavior is hardcoded in `ms-table.tsx`. |
+| Global CSS | **Do not import** `global.css` or `global-zeclio.css` in any microfrontend. `@maxi/styleguide` already imports `global-zeclio.css` when the single-spa starts. | Double import can cause conflicts. All `--maxi-*` CSS variables are already available. For overrides, set CSS variables in the project's global stylesheet. |
+| `MsSidebar` | The overlay (`ms-sidebar-overlay`) can throw a `removeChild` crash in race conditions with single-spa. **Workaround:** implement side panels as a native `<aside>` with `position:fixed`. Fix pending in the library. | Conditional rendering in Stencil + a click-outside event still propagating → Stencil calls `removeChild` on a node React has already removed. |
 
 ### How to add a new exception
 

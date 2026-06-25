@@ -212,16 +212,28 @@ import { MsButton } from "maxi-react-components";
 
 ---
 
-### 4. CSS theme — one import only, in the entry point
+### 4. CSS theme — already loaded by `@maxi/styleguide` in ZEUS
 
-The global CSS (`global.css` or `global-zeclio.css`) is imported **once** in the root-config or styleguide entry point. Never re-import it inside an individual app or component.
+**In ZEUS microfrontends:** do NOT import `global.css` or `global-zeclio.css` anywhere in the app. The `@maxi/styleguide` module imports `global-zeclio.css` at single-spa load time — before any microfrontend mounts. All `--maxi-*` CSS variables are already available in the DOM.
 
 ```tsx
-// INCORRECT — do not add in components or individual apps
+// ❌ INCORRECT in ZEUS — double import, may cause conflicts
 import "maxi-web-components/global.css";
+import "maxi-web-components/global-zeclio.css";
+
+// ✅ CORRECT in ZEUS — add nothing; styleguide already loads the theme
 ```
 
-> To customise theme variables, override the CSS custom properties in the project's global stylesheet, never inline.
+**In standalone projects** (non-ZEUS): import the CSS **once** in the entry point (`main.tsx` / `index.tsx`). Never in individual components.
+
+```tsx
+// Standalone React entry point (non-ZEUS)
+import "maxi-web-components/global.css";       // base theme
+// or:
+import "maxi-web-components/global-zeclio.css"; // Zeclio theme
+```
+
+> To override theme variables, set `--maxi-*` custom properties in the project's global stylesheet. For component-specific overrides, use the `class` or `customClass` prop to scope the CSS (see Rule 15). Never target internal component class names globally. Full variable reference: `mwc.md` → Section 3.
 
 ---
 

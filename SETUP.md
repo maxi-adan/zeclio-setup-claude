@@ -792,6 +792,8 @@ Las reglas específicas de ZEUS son comportamientos de los componentes MWC que d
 | `MsTable` | Columnas con valores numéricos (dinero, cantidades, porcentajes) siempre con `align: 'right'` y `alignHeader: 'right'`. | Estándar visual ZEUS — los números se alinean a la derecha. |
 | `MsTable` | Siempre usar `size="small"`. | El default `"normal"` produce filas demasiado altas para los diseños ZEUS. |
 | `MsTable` | Cualquier elemento clicable dentro de una celda (`render`) **debe** estar envuelto en `<div class="ms-table-actions">`. | Sin esta clase, el click propaga a la fila y dispara `rowClick` o el toggle de expand. Comportamiento hardcodeado en `ms-table.tsx`. |
+| CSS global | **No importar** `global.css` ni `global-zeclio.css` en ningún microfrontend. `@maxi/styleguide` ya importa `global-zeclio.css` al arrancar el single-spa. | Doble importación puede causar conflictos. Todas las variables `--maxi-*` ya están disponibles. Para overrides usar CSS variables en el global del proyecto. |
+| `MsSidebar` | El overlay (`ms-sidebar-overlay`) puede lanzar `removeChild` crash en race conditions con single-spa. **Workaround:** implementar paneles laterales como `<aside>` nativo con `position:fixed`. Fix pendiente en la librería. | Renderizado condicional en Stencil + evento click-outside propagándose → Stencil llama `removeChild` sobre un nodo que React ya retiró. |
 
 ### Cómo agregar una excepción nueva
 
