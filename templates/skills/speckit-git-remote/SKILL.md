@@ -1,5 +1,6 @@
 ---
 name: speckit-git-remote
+model: haiku
 description: Detect Git remote URL for GitHub integration
 compatibility: Requires spec-kit project structure with .specify/ directory
 metadata:

@@ -91,6 +91,12 @@ templates/
     └── speckit-*/SKILL.md   ← speckit-git-feature pregunta feat/fix antes de crear la rama y la nombra feat/NNN-nombre o fix/NNN-nombre
 ```
 
+**Selección de modelo por skill:** cada `templates/skills/*/SKILL.md` declara `model:` en su frontmatter para elegir el modelo con el que Claude ejecuta ese skill (el override dura solo ese turno; luego vuelve al modelo de sesión). Convención actual, optimizada por costo:
+- **`haiku`** — los 5 skills `speckit-git-*` (operaciones git mecánicas, casi sin razonamiento).
+- **`sonnet`** — el resto (`analyze`, `checklist`, `clarify`, `constitution`, `implement`, `plan`, `specify`, `tasks`, `taskstoissues`): Sonnet 5 rinde cerca de Opus en coding/agéntico a ~1/1.7 del costo de salida.
+
+Al añadir un skill nuevo, incluir `model:` según su carga de razonamiento. **Solo el frontmatter de SKILL.md respeta `model:`** — los archivos de `docs/`, `maxi-setup.md`, `SETUP.md`, `constitution.md` y los `.specify/extensions/git/commands/*.md` se cargan como contexto/formato spec-kit y ahí un `model:` no tiene efecto.
+
 #### `templates-root/` → project root (`./`)
 
 ```

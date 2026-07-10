@@ -1,5 +1,6 @@
 ---
 name: speckit-git-feature
+model: haiku
 description: Create a feature branch with sequential or timestamp numbering
 compatibility: Requires spec-kit project structure with .specify/ directory
 metadata:

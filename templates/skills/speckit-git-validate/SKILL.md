@@ -1,5 +1,6 @@
 ---
 name: speckit-git-validate
+model: haiku
 description: Validate current branch follows feature branch naming conventions
 compatibility: Requires spec-kit project structure with .specify/ directory
 metadata:

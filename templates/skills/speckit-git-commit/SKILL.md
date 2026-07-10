@@ -1,5 +1,6 @@
 ---
 name: speckit-git-commit
+model: haiku
 description: Auto-commit changes after a Spec Kit command completes
 compatibility: Requires spec-kit project structure with .specify/ directory
 metadata:

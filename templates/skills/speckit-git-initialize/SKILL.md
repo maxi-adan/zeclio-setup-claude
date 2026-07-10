@@ -1,5 +1,6 @@
 ---
 name: speckit-git-initialize
+model: haiku
 description: Initialize a Git repository with an initial commit
 compatibility: Requires spec-kit project structure with .specify/ directory
 metadata:

@@ -1,5 +1,6 @@
 ---
 name: "speckit-plan"
+model: "sonnet"
 description: "Execute the implementation planning workflow using the plan template to generate design artifacts."
 argument-hint: "Optional guidance for the planning phase"
 compatibility: "Requires spec-kit project structure with .specify/ directory"
