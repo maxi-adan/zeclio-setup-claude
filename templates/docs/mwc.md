@@ -205,6 +205,54 @@ Para overrides de variables o clases internas, ver [Sección 3 — CSS variables
 
 ---
 
+### `MsButton` — íconos custom deben pasarse por el prop `icon`, no como children
+
+**Problema**: `MsButton` solo aplica su pipeline de recoloreo por variante (`filter: brightness(0) invert(1)` + un filtro específico de color por variante, ej. `.ms-button.outline-secondary img { filter: ... }`) a lo que reciba vía el prop `icon` (una URL, renderizada internamente como `<img src={icon}>`). Un ícono pasado como *children* (slot) — un `<svg>` a mano o cualquier componente que no sea `MsIcon` — se renderiza igual (el slot no discrimina por tipo de contenido), pero **se salta por completo ese pipeline de recoloreo**: el color queda fijo en lo que el propio SVG defina, sin adaptarse a la variante del botón.
+
+**Fuente**: confirmado leyendo `ms-button.tsx`'s `render()`:
+
+```tsx
+[this.label ? this.label : <slot />, this.icon && <img class={...} src={this.icon} />]
+```
+
+y `ms-button.css`:
+
+```css
+.ms-button img {
+  filter: brightness(0) invert(1);
+}
+.ms-button.outline-secondary img {
+  filter: brightness(0) saturate(100%) invert(34%) ...;
+}
+```
+
+**Patrón correcto — ícono custom (sin asset de archivo) vía data URI:**
+
+```jsx
+// ✅ CORRECTO — data URI por el prop `icon`, se recolorea solo según variant
+function svgDataUri(paths) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
+const EXPAND_ICON = svgDataUri('<path d="M4 9V4h5"/>...');
+
+<MsButton icon={EXPAND_ICON} onClickEvent={...} />;
+```
+
+```jsx
+// ❌ INCORRECTO — el SVG se ve, pero con color fijo, sin recoloreo por variant
+<MsButton onClickEvent={...}>
+  <svg stroke="#374151">...</svg>
+</MsButton>
+```
+
+> `stroke="black"` (o cualquier color oscuro) en el SVG fuente es importante — `brightness(0) invert(1)` aplana la imagen a una silueta blanca antes de recolorearla, así que el color original del SVG no importa para el resultado final, solo su forma/opacidad.
+
+**`MsIcon` como children sigue siendo válido** — no pasa por este pipeline (no es un `<img>`), pero tiene su propio manejo de color vía el prop `color` (default `currentColor`). Esta excepción aplica solo a SVGs/imágenes custom hechas a mano que se quieran integrar con el theming automático de `MsButton`.
+
+---
+
 ---
 
 ## Table of Contents

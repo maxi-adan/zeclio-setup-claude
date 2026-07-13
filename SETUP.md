@@ -34,7 +34,7 @@ Este documento explica cómo funciona el sistema que mantiene los documentos de 
 
 > 📌 **Antes que nada: solicitá el acceso a Nexus a tu líder de equipo** (un usuario/credenciales o directamente el `_authToken` de npm). Sin ese acceso no vas a poder instalar el paquete. El detalle está en el Paso 1.
 
-**Versión actual del paquete:** `3.0.4` — verificá siempre la última con:
+**Versión actual del paquete:** `3.0.5` — verificá siempre la última con:
 
 ```powershell
 npm view zeclio-setup-claude version --registry=https://artifacts.maxilabs.net/repository/maxi-npm-group/
@@ -69,7 +69,7 @@ Verificá que quedó bien configurado:
 
 ```powershell
 npm view zeclio-setup-claude version
-# Debe devolver un número de versión (ej. 3.0.4), no un error de auth
+# Debe devolver un número de versión (ej. 3.0.5), no un error de auth
 ```
 
 ### Paso 3 — Corré el comando en la raíz de tu proyecto
@@ -867,6 +867,7 @@ Las reglas específicas de ZEUS son comportamientos de los componentes MWC que d
 | `MsTable` | Cualquier elemento clicable dentro de una celda (`render`) **debe** estar envuelto en `<div class="ms-table-actions">`. | Sin esta clase, el click propaga a la fila y dispara `rowClick` o el toggle de expand. Comportamiento hardcodeado en `ms-table.tsx`. |
 | CSS global | **No importar** `global.css` ni `global-zeclio.css` en ningún microfrontend. `@maxi/styleguide` ya importa `global-zeclio.css` al arrancar el single-spa. | Doble importación puede causar conflictos. Todas las variables `--maxi-*` ya están disponibles. Para overrides usar CSS variables en el global del proyecto. |
 | `MsSidebar` | El overlay (`ms-sidebar-overlay`) puede lanzar `removeChild` crash en race conditions con single-spa. **Workaround:** implementar paneles laterales como `<aside>` nativo con `position:fixed`. Fix pendiente en la librería. | Renderizado condicional en Stencil + evento click-outside propagándose → Stencil llama `removeChild` sobre un nodo que React ya retiró. |
+| `MsButton` | Íconos custom (SVG a mano, no `MsIcon`) deben pasarse por el prop `icon` (data URI si no hay asset de archivo), nunca como children. | El prop `icon` es el único camino que pasa por el pipeline de recoloreo por variante (`filter: brightness(0) invert(1)` + filtro por variante en `ms-button.css`) — un SVG como children se renderiza, pero con color fijo, sin adaptarse a la variante del botón. |
 
 ### Cómo agregar una excepción nueva
 
