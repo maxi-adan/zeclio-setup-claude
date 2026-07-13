@@ -34,7 +34,7 @@ This document explains how the system works that keeps Claude's context document
 
 > 📌 **First of all: request Nexus access from your team leader** (a user/credentials or directly the npm `_authToken`). Without that access you can't install the package. Details are in Step 1.
 
-**Current package version:** `3.0.5` — always check the latest with:
+**Current package version:** `3.0.6` — always check the latest with:
 
 ```powershell
 npm view zeclio-setup-claude version --registry=https://artifacts.maxilabs.net/repository/maxi-npm-group/
@@ -69,7 +69,7 @@ Verify it's configured correctly:
 
 ```powershell
 npm view zeclio-setup-claude version
-# Should return a version number (e.g. 3.0.5), not an auth error
+# Should return a version number (e.g. 3.0.6), not an auth error
 ```
 
 ### Step 3 — Run the command at your project root
@@ -868,6 +868,7 @@ ZEUS exceptions are component behaviors that differ from the default when used i
 | Global CSS | **Do not import** `global.css` or `global-zeclio.css` in any microfrontend. `@maxi/styleguide` already imports `global-zeclio.css` when the single-spa starts. | Double import can cause conflicts. All `--maxi-*` CSS variables are already available. For overrides, set CSS variables in the project's global stylesheet. |
 | `MsSidebar` | The overlay (`ms-sidebar-overlay`) can throw a `removeChild` crash in race conditions with single-spa. **Workaround:** implement side panels as a native `<aside>` with `position:fixed`. Fix pending in the library. | Conditional rendering in Stencil + a click-outside event still propagating → Stencil calls `removeChild` on a node React has already removed. |
 | `MsButton` | Custom icons (hand-drawn SVG, not `MsIcon`) must be passed via the `icon` prop (data URI if there's no file asset), never as children. | The `icon` prop is the only path that goes through the per-variant recolor pipeline (`filter: brightness(0) invert(1)` + a per-variant filter in `ms-button.css`) — an SVG passed as children still renders, but with a fixed color that doesn't adapt to the button's variant. |
+| `MsTable` | If `columns` changes content on the fly (e.g. a hide/show columns toggle), use a `key` derived from the visible column set (`key={visibleColumns.map(c => c.key).join(",")}`) to force a full remount. | Reconciling the same instance in place when `columns` changes shape collides with the React roots `MsTable` mounts for columns with a JSX `render` — throws `TypeError: Cannot read properties of null (reading 'insertBefore'/'nodeType')`. Same mechanism as the `MsDialog` bug in the row above, applied to `columns` instead of dialog content. |
 
 ### How to add a new exception
 

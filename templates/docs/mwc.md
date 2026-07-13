@@ -133,6 +133,27 @@ Cuando el contenido de un `MsDialog` depende de datos que cambian entre apertura
 
 ---
 
+### `MsTable` — cambiar `columns` en caliente también necesita `key` para forzar remount
+
+**Problema**: si el array `columns` cambia de contenido mientras `<MsTable>` sigue montado (ej. una tabla que permite ocultar/mostrar columnas desde un toggle), reconciliar la MISMA instancia in-place puede lanzar `TypeError: Cannot read properties of null (reading 'insertBefore')` / `(reading 'nodeType')` apuntando a `<ms-table>`. Misma causa raíz que el bug de `MsDialog` de arriba: `MsTable` monta sus propios React roots para columnas con `render` en JSX (ver [Framework detection in ms-table](#framework-detection-in-ms-table)) — el diff de Stencil sobre el light DOM corre en paralelo al commit de esos React roots anidados cuando `columns` cambia de forma (columnas que aparecen/desaparecen), y ambos terminan pisándose.
+
+**Solución:** mismo patrón que `MsDialog` — agregar `key` derivado del set de columnas visibles. React destruye y remonta `MsTable` completo cuando `key` cambia, evitando la reconciliación in-place que causa el crash.
+
+```jsx
+// ✅ CORRECTO — key fuerza remount completo cuando cambia el set de columnas visibles
+const visibleColumns = columns.filter((c) => !hiddenKeys.has(c.key));
+const visibleColumnsKey = visibleColumns.map((c) => c.key).join(",");
+
+<MsTable key={visibleColumnsKey} columns={visibleColumns} data={data} size="small" />;
+
+// ❌ INCORRECTO — misma instancia reconcilia in-place, puede crashear
+<MsTable columns={visibleColumns} data={data} size="small" />;
+```
+
+**Aplica cuando:** la tabla permite ocultar/mostrar columnas dinámicamente (toolbox de columnas, preferencias de usuario), o cualquier otro caso donde `columns` cambie de tamaño/orden en caliente. `data` sí puede cambiar libremente sin este problema — solo `columns` (la estructura) dispara el conflicto.
+
+---
+
 ### `removeChild` en componentes con popup/overlay — estado de la librería
 
 **Causa raíz:** los componentes con `shadow: false` que usan renderizado condicional (`{condition && <div>}`) para mostrar/ocultar un popup o overlay pueden lanzar `NotFoundError: Failed to execute 'removeChild' on 'Node'` cuando Stencil intenta reconciliar el vdom justo mientras un evento externo (click-outside, touchstart) todavía propaga sobre el mismo nodo.

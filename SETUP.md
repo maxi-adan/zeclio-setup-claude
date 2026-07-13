@@ -34,7 +34,7 @@ Este documento explica cómo funciona el sistema que mantiene los documentos de 
 
 > 📌 **Antes que nada: solicitá el acceso a Nexus a tu líder de equipo** (un usuario/credenciales o directamente el `_authToken` de npm). Sin ese acceso no vas a poder instalar el paquete. El detalle está en el Paso 1.
 
-**Versión actual del paquete:** `3.0.5` — verificá siempre la última con:
+**Versión actual del paquete:** `3.0.6` — verificá siempre la última con:
 
 ```powershell
 npm view zeclio-setup-claude version --registry=https://artifacts.maxilabs.net/repository/maxi-npm-group/
@@ -69,7 +69,7 @@ Verificá que quedó bien configurado:
 
 ```powershell
 npm view zeclio-setup-claude version
-# Debe devolver un número de versión (ej. 3.0.5), no un error de auth
+# Debe devolver un número de versión (ej. 3.0.6), no un error de auth
 ```
 
 ### Paso 3 — Corré el comando en la raíz de tu proyecto
@@ -868,6 +868,7 @@ Las reglas específicas de ZEUS son comportamientos de los componentes MWC que d
 | CSS global | **No importar** `global.css` ni `global-zeclio.css` en ningún microfrontend. `@maxi/styleguide` ya importa `global-zeclio.css` al arrancar el single-spa. | Doble importación puede causar conflictos. Todas las variables `--maxi-*` ya están disponibles. Para overrides usar CSS variables en el global del proyecto. |
 | `MsSidebar` | El overlay (`ms-sidebar-overlay`) puede lanzar `removeChild` crash en race conditions con single-spa. **Workaround:** implementar paneles laterales como `<aside>` nativo con `position:fixed`. Fix pendiente en la librería. | Renderizado condicional en Stencil + evento click-outside propagándose → Stencil llama `removeChild` sobre un nodo que React ya retiró. |
 | `MsButton` | Íconos custom (SVG a mano, no `MsIcon`) deben pasarse por el prop `icon` (data URI si no hay asset de archivo), nunca como children. | El prop `icon` es el único camino que pasa por el pipeline de recoloreo por variante (`filter: brightness(0) invert(1)` + filtro por variante en `ms-button.css`) — un SVG como children se renderiza, pero con color fijo, sin adaptarse a la variante del botón. |
+| `MsTable` | Si `columns` cambia de contenido en caliente (ej. toggle de columnas ocultas/visibles), usar `key` derivado del set de columnas visibles (`key={visibleColumns.map(c => c.key).join(",")}`) para forzar remount completo. | Reconciliar la misma instancia in-place cuando `columns` cambia de forma choca con los React roots que `MsTable` monta para columnas con `render` en JSX — lanza `TypeError: Cannot read properties of null (reading 'insertBefore'/'nodeType')`. Mismo mecanismo que el bug de `MsDialog` de la fila de arriba, aplicado a `columns` en vez de al contenido del dialog. |
 
 ### Cómo agregar una excepción nueva
 
