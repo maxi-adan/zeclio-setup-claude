@@ -54,11 +54,12 @@ node /path/to/zeclio-setup-claude.js --dry-run
 After the copy loop, and only when `--dry-run` is not set, `main()` performs a series of **idempotent post-copy actions** on the project root (they run regardless of `--force`; each is guarded by a marker or an existence check):
 
 1. **`.claude/.version`** — written with the current `package.json` version.
-2. **`@.claude/maxi-setup.md` reference** — appended to `CLAUDE.md` if not present; creates `CLAUDE.md` if it doesn't exist yet.
-3. **`@project-state.md` reference** — appended to `CLAUDE.md` if not present.
-4. **`project-state.md`** — created at the project root with a starter template (componentes / features / patrones tables) if it doesn't exist.
-5. **Maintenance rule** — appended to `CLAUDE.md` if the marker `` 'actualizar `project-state.md`' `` is not found. Instructs Claude to keep `project-state.md` updated when the architecture changes or a component/feature is completed.
-6. **Version-check rule** — appended to `CLAUDE.md` if the marker `'OBLIGATORIO al inicio de cada sesión — verificar versión de zeclio-setup-claude'` is not found. Tells Claude to compare `.claude/.version` against Nexus at session start and self-update with `npx zeclio-setup-claude@latest --force` if they differ.
+2. **`.claude/settings.json` — `SessionStart` hook merge**: unlike `templates/`, this file is **not** blindly overwritten — it's a config file individual projects accumulate their own hooks/permissions into over time, and a blind overwrite on the next `--force` run would silently destroy that. The script reads the existing file (or starts from `{}` if missing), ensures `hooks.SessionStart` contains an entry whose `command` is `bash .claude/hooks/check-zeclio-setup-version.sh` (deduped by exact command string, so re-runs don't add it twice), and writes the merged result back — every other key (`permissions`, other hook events, etc.) is left untouched. If the existing file has invalid JSON, the merge is skipped entirely (logs `~  omitido`) rather than risking corruption — the project owner has to fix it manually. This is the same append-only philosophy as the `CLAUDE.md` injections below, applied to JSON instead of markdown.
+3. **`@.claude/maxi-setup.md` reference** — appended to `CLAUDE.md` if not present; creates `CLAUDE.md` if it doesn't exist yet.
+4. **`@project-state.md` reference** — appended to `CLAUDE.md` if not present.
+5. **`project-state.md`** — created at the project root with a starter template (componentes / features / patrones tables) if it doesn't exist.
+6. **Maintenance rule** — appended to `CLAUDE.md` if the marker `` 'actualizar `project-state.md`' `` is not found. Instructs Claude to keep `project-state.md` updated when the architecture changes or a component/feature is completed.
+7. **Version-check rule** — appended to `CLAUDE.md` if the marker `'OBLIGATORIO al inicio de cada sesión — verificar versión de zeclio-setup-claude'` is not found. Tells Claude to compare `.claude/.version` against Nexus at session start and self-update with `npx zeclio-setup-claude@latest --force` if they differ. This markdown instruction is now backed by the `.claude/hooks/check-zeclio-setup-version.sh` script wired in step 2 above — the hook makes the check deterministic (the harness runs it, not the model), the markdown rule stays as a human-readable statement of intent and a fallback for tooling that doesn't support hooks.
 
 `processTemplates(srcDir, destDir, alwaysOverwritePrefixes)` does the following:
 
@@ -82,7 +83,7 @@ Both `templates/` and `templates-root/` are shipped with the package (listed in 
 
 ```
 templates/
-├── CLAUDE.md           ← instrucciones para Claude: verificar versión al inicio de sesión, verificar init de CLAUDE.md, tabla de docs de contexto (incluyendo .specify/memory/constitution.md)
+├── maxi-setup.md       ← instrucciones para Claude: verificar versión al inicio de sesión, verificar init de CLAUDE.md, tabla de docs de contexto (incluyendo .specify/memory/constitution.md)
 ├── docs/
 │   ├── login.md        ← @maxi/login — Keycloak, token$, exported API, session patterns
 │   ├── mwc.md          ← Maxi Web Components — full component reference, props, events
@@ -90,10 +91,13 @@ templates/
 │   ├── styleguide.md   ← @maxi/styleguide — component catalog, hooks, permission utilities, rules
 │   ├── api.md          ← HTTP pattern: instance.js, validateToken, token$ interceptor, APP_CONFIG_*
 │   └── state.md        ← Redux Toolkit in single-spa: store, permissions slice, usePermissions hook
-├── settings.json
+├── hooks/
+│   └── check-zeclio-setup-version.sh   ← corre en un hook SessionStart (ver .claude/settings.json), automatiza el chequeo de versión de maxi-setup.md
 └── skills/
     └── speckit-*/SKILL.md   ← speckit-git-feature pregunta feat/fix antes de crear la rama y la nombra feat/NNN-nombre o fix/NNN-nombre
 ```
+
+> **`.claude/settings.json` no vive en `templates/`** — a diferencia de `docs/`/`skills/`/`maxi-setup.md` (contenido de plataforma, siempre reemplazable), `settings.json` es un archivo de config que cada proyecto customiza con el tiempo (agrega sus propios hooks/permisos). Se maneja con lógica de merge en `main()` (ver punto 2 de la lista de "idempotent post-copy actions" arriba), no con `processTemplates()`. `hooks/check-zeclio-setup-version.sh` sí es un template plano de plataforma (igual que `docs/`) — el script en sí no se customiza por proyecto, solo su referencia dentro de `settings.json`.
 
 **Selección de modelo por skill:** cada `templates/skills/*/SKILL.md` declara `model:` en su frontmatter para elegir el modelo con el que Claude ejecuta ese skill (el override dura solo ese turno; luego vuelve al modelo de sesión). Convención actual, optimizada por costo:
 - **`haiku`** — los 5 skills `speckit-git-*` (operaciones git mecánicas, casi sin razonamiento).
@@ -119,11 +123,13 @@ templates-root/
 
 **Files never overwritten by `processTemplates`:** `SETUP.md` and `.specify/memory/constitution.md` are in the `NEVER_OVERWRITE` list — created once and left alone on every subsequent run, even with `--force`.
 
-**All other files in `templates/` always overwrite** on every `npx zeclio-setup-claude` run (no `--force` needed). This includes `skills/`, `maxi-setup.md`, `settings.json`, and `docs/`.
+**All other files in `templates/` always overwrite** on every `npx zeclio-setup-claude` run (no `--force` needed). This includes `skills/`, `maxi-setup.md`, `hooks/`, and `docs/`.
 
 **CLAUDE.md is not a template file** — it is written/patched by the injection logic at the end of `main()`, not by `processTemplates()`. Adding content to `CLAUDE.md` requires editing the injection block in `zeclio-setup-claude.js`, not dropping a file in `templates-root/`.
 
 **`project-state.md` is not a template file either** — it is created once **at the project root** by the post-copy logic (not by `processTemplates()`) if it doesn't exist, and is never overwritten (not even with `--force`). Each project accumulates its own history there. Putting it in `templates/` would reset project-specific content on `--force` runs.
+
+**`.claude/settings.json` is not a template file either** — same reasoning as `project-state.md`, but merge instead of create-once: it's created if missing, and on every run only has the `check-zeclio-setup-version.sh` `SessionStart` hook merged in (deduped by command string) if not already present; any other keys a project has added (`permissions`, other hook events, etc.) are preserved untouched. To change what the merged hook entry looks like, edit the block in `zeclio-setup-claude.js` right after the `.version` write — not `templates/`.
 
 #### About `docs/`
 

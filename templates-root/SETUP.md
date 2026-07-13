@@ -21,11 +21,13 @@ CLAUDE.md
 
 No hay nada que "llamar" manualmente. Con que Claude Code abra una sesión en este directorio, carga todo el contexto.
 
+> El chequeo de versión que documenta `maxi-setup.md` corre además vía un hook `SessionStart` (`.claude/hooks/check-zeclio-setup-version.sh`, wireado en `.claude/settings.json`, fuera de este árbol de `@` imports) — ver sección 2.
+
 ---
 
 ## 2. Chequeo de versión automático
 
-Al inicio de **cada sesión**, Claude ejecuta el siguiente flujo definido en `.claude/maxi-setup.md`:
+Al inicio de **cada sesión**, un hook `SessionStart` (`.claude/hooks/check-zeclio-setup-version.sh`, wireado en `.claude/settings.json`) corre este flujo automáticamente — sin depender de que Claude decida ejecutarlo:
 
 ```
 1. Leer .claude/.version  (versión instalada del setup)
@@ -33,18 +35,21 @@ Al inicio de **cada sesión**, Claude ejecuta el siguiente flujo definido en `.c
    npm view zeclio-setup-claude version
      --registry=https://artifacts.maxilabs.net/repository/maxi-npm-group/
 3. Comparar versiones:
-   - .version no existe       → npx zeclio-setup-claude --force
-   - versiones difieren       → npx zeclio-setup-claude@latest --force
-   - versiones coinciden      → continúa silenciosamente
+   - .version no existe       → el hook no hace nada (ver nota abajo)
+   - versiones difieren       → npx zeclio-setup-claude@latest --force (silencioso, con aviso)
+   - versiones coinciden      → no hace nada
+   - Nexus no responde        → se salta en silencio, no bloquea la sesión
 ```
+
+> **Por qué un hook y no solo la instrucción de `maxi-setup.md`:** una instrucción en markdown depende de que el modelo elija seguirla en cada sesión — en la práctica, es fácil que quede desplazada por lo que sea que pidas primero. El hook lo hace determinístico: el harness de Claude Code lo corre siempre, antes de que el modelo procese tu mensaje. `.claude/maxi-setup.md` sigue documentando el mismo flujo para referencia humana, y es el único mecanismo que cubre el caso "proyecto nuevo, el hook todavía no está instalado" — ese primer bootstrap sí depende de que Claude siga la instrucción, porque el hook no puede existir antes de que `npx zeclio-setup-claude` corra al menos una vez.
 
 ### Lo que hace `npx zeclio-setup-claude`
 
-Regenera la estructura `.claude/` con los docs, skills y maxi-setup.md actualizados. Actualiza `.claude/.version` con la nueva versión. **No toca código del microfrontend**.
+Regenera la estructura `.claude/` con los docs, skills, maxi-setup.md y el hook de verificación actualizados. Mergea (nunca sobreescribe completo) el hook `SessionStart` dentro de `.claude/settings.json` — preserva cualquier `permissions` u otro hook que el proyecto ya tenga configurado ahí. Actualiza `.claude/.version` con la nueva versión. **No toca código del microfrontend**.
 
 ### Dónde vive esto
 
-En `.claude/maxi-setup.md`. CLAUDE.md lo importa con `@.claude/maxi-setup.md`. No requiere nada más.
+El script en `.claude/hooks/check-zeclio-setup-version.sh`, wireado como hook `SessionStart` en `.claude/settings.json`. `.claude/maxi-setup.md` documenta el mismo comportamiento en lenguaje natural; CLAUDE.md lo importa con `@.claude/maxi-setup.md`.
 
 ---
 
@@ -271,8 +276,8 @@ Al terminar cualquier tarea, Claude evalúa si algo cambió en la **arquitectura
 
 | Problema                         | Solución                                                  |
 | -------------------------------- | --------------------------------------------------------- |
-| `.claude/.version` no existe     | Claude ejecuta `npx zeclio-setup-claude --force`          |
-| Versión desactualizada           | Claude ejecuta `npx zeclio-setup-claude@latest --force`   |
+| `.claude/.version` no existe     | Claude ejecuta `npx zeclio-setup-claude --force` (el hook no cubre este caso, ver sección 2) |
+| Versión desactualizada           | El hook `SessionStart` la actualiza solo, en silencio (ver sección 2) |
 | Plan usa componentes incorrectos | Revisar `constitution.md` con las reglas ZEUS             |
 | `/speckit-implement` se detiene  | Revisar el error y volver a ejecutar `/speckit-implement` |
 | Spec con `[NEEDS CLARIFICATION]` | Usar `/speckit-clarify` antes de planificar               |
@@ -283,8 +288,8 @@ Al terminar cualquier tarea, Claude evalúa si algo cambió en la **arquitectura
 
 ```
 Nueva sesión
+  → Hook SessionStart chequea .claude/.version vs Nexus (automático, ver sección 2)
   → Claude carga CLAUDE.md
-      → Chequea .claude/.version vs Nexus (maxi-setup.md)
       → Carga todos los docs de .claude/docs/ en contexto
 
 Tarea puntual (tabla, componente, fix)

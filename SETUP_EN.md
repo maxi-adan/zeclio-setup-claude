@@ -34,7 +34,7 @@ This document explains how the system works that keeps Claude's context document
 
 > 📌 **First of all: request Nexus access from your team leader** (a user/credentials or directly the npm `_authToken`). Without that access you can't install the package. Details are in Step 1.
 
-**Current package version:** `3.0.3` — always check the latest with:
+**Current package version:** `3.0.4` — always check the latest with:
 
 ```powershell
 npm view zeclio-setup-claude version --registry=https://artifacts.maxilabs.net/repository/maxi-npm-group/
@@ -69,7 +69,7 @@ Verify it's configured correctly:
 
 ```powershell
 npm view zeclio-setup-claude version
-# Should return a version number (e.g. 3.0.3), not an auth error
+# Should return a version number (e.g. 3.0.4), not an auth error
 ```
 
 ### Step 3 — Run the command at your project root
@@ -398,7 +398,8 @@ npx zeclio-setup-claude
 
 | File | Behavior |
 |---|---|
-| Everything in `.claude/` (docs, skills, maxi-setup, settings) | **Always overwritten** — all platform-managed files |
+| `.claude/docs/*`, `.claude/skills/*`, `.claude/maxi-setup.md`, `.claude/hooks/*` | **Always overwritten** — all platform-managed files |
+| `.claude/settings.json` | **Merged, never fully overwritten** — only the version-check `SessionStart` hook is added/updated (deduped); any `permissions` or other hooks the project already has are left untouched. If the existing JSON is malformed, the merge is skipped with a warning |
 | `.specify/extensions/git/scripts/*` | **Always overwritten** — platform scripts |
 | `.specify/extensions/git/commands/*` | **Always overwritten** — platform commands |
 | `.specify/extensions/git/extension.yml` | **Always overwritten** — platform config |
@@ -425,14 +426,16 @@ npx zeclio-setup-claude
 
 Every project that uses `zeclio-setup-claude` has a `.claude/.version` file that records which version of the package was used to initialize or update the `.claude/` structure. This file is the foundation of the auto-update mechanism.
 
-### What happens when Claude opens the project
+> **As of version `3.0.4`:** steps 1–3 below no longer depend solely on Claude choosing to follow the instruction in `.claude/maxi-setup.md` — they run on their own via a `SessionStart` hook (`.claude/hooks/check-zeclio-setup-version.sh`, wired in `.claude/settings.json`). Previously, if the model didn't prioritize that instruction at the start of a busy session, the check simply didn't happen — the hook makes it deterministic: the harness always runs it, regardless of what the first message is about. `.claude/maxi-setup.md` still documents the same flow in plain language (human reference + fallback for the initial bootstrap, see Step 3). Step 4 (the `CLAUDE.md` initialization check) remains the model's responsibility — it requires judgment and potentially asking you a question, which a shell hook can't do.
 
-At the start of **every session**, before responding to any message, Claude automatically runs these steps (instructions defined in `.claude/maxi-setup.md`):
+### What happens when the project is opened
+
+At the start of **every session**:
 
 **Step 1 — Read the installed version**
 
 ```
-.claude/.version  →  e.g. "1.4.2"
+.claude/.version  →  e.g. "3.0.4"
 ```
 
 **Step 2 — Query the version available in Nexus**
@@ -440,18 +443,19 @@ At the start of **every session**, before responding to any message, Claude auto
 ```bash
 npm view zeclio-setup-claude version \
   --registry=https://artifacts.maxilabs.net/repository/maxi-npm-group/
-# Responds: "1.4.5"
+# Responds: "3.0.5"
 ```
 
 **Step 3 — Act based on the result**
 
-| Situation | What Claude does |
+| Situation | What happens |
 |---|---|
-| `.claude/.version` **does not exist** | Runs `npx zeclio-setup-claude --force` without asking |
-| Installed version **≠** version in Nexus | Runs `npx zeclio-setup-claude@latest --force` without asking |
-| Versions **match** | Does nothing, continues normally |
+| `.claude/.version` **does not exist** | The hook does nothing (avoids re-initializing `.claude/` without anyone asking). This case is only resolved by the instruction in `.claude/maxi-setup.md`, which does tell Claude to run `npx zeclio-setup-claude --force` without asking — applies to the very first `npx zeclio-setup-claude` in a project that doesn't have the hook installed yet (chicken-and-egg: the hook only exists after the tool has been run at least once) |
+| Installed version **≠** version in Nexus | The hook silently runs `npx zeclio-setup-claude@latest --force` and emits a `systemMessage` confirming the update |
+| Versions **match** | The hook does nothing |
+| Nexus doesn't respond (offline, VPN down) | The hook skips silently — doesn't block or crash the session over a network issue |
 
-> Claude doesn't notify you when it updates — it just does it and continues with your request. If you want to know what version is installed, you can read `.claude/.version` directly.
+> The hook doesn't ask for confirmation — it just runs and continues. If you want to know what version is installed, you can read `.claude/.version` directly.
 
 **Step 4 — Verify that `CLAUDE.md` is initialized**
 

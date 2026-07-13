@@ -119,6 +119,50 @@ function main() {
     fs.mkdirSync(TARGET_DIR, { recursive: true });
     fs.writeFileSync(path.join(TARGET_DIR, '.version'), pkg.version + '\n');
 
+    // .claude/settings.json is NOT a plain template file (unlike docs/skills,
+    // it's a config file individual projects are expected to accumulate their
+    // own hooks/permissions into over time) — a blind overwrite here would
+    // silently destroy any project-specific customization on the next
+    // `npx zeclio-setup-claude --force` run. Instead this merges just the
+    // version-check SessionStart hook in, same append-only philosophy as the
+    // CLAUDE.md injections below: read what's there (or start empty), add our
+    // entry only if missing, leave everything else untouched.
+    const settingsPath = path.join(TARGET_DIR, 'settings.json');
+    const HOOK_COMMAND = 'bash .claude/hooks/check-zeclio-setup-version.sh';
+    let settings = {};
+    let settingsUnreadable = false;
+    if (fs.existsSync(settingsPath)) {
+      try {
+        settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
+      } catch (e) {
+        settingsUnreadable = true;
+      }
+    }
+    if (settingsUnreadable) {
+      log('~', YELLOW, 'omitido   .claude/settings.json (JSON inválido — revisar manualmente, no se mergeó el hook)');
+    } else {
+      settings.hooks = settings.hooks || {};
+      settings.hooks.SessionStart = settings.hooks.SessionStart || [];
+      const alreadyWired = settings.hooks.SessionStart.some(group =>
+        Array.isArray(group.hooks) && group.hooks.some(h => h.command === HOOK_COMMAND)
+      );
+      if (!alreadyWired) {
+        settings.hooks.SessionStart.push({
+          hooks: [
+            {
+              type: 'command',
+              command: HOOK_COMMAND,
+              shell: 'bash',
+              timeout: 20,
+              statusMessage: 'Checking zeclio-setup-claude version...',
+            },
+          ],
+        });
+        fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
+        log('+', GREEN, 'hook SessionStart de verificación de versión añadido en .claude/settings.json');
+      }
+    }
+
     const claudePath = path.join(process.cwd(), 'CLAUDE.md');
     const reference = '\n@.claude/maxi-setup.md\n';
     if (fs.existsSync(claudePath)) {
