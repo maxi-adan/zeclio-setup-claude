@@ -51,10 +51,14 @@ node /path/to/zeclio-setup-claude.js --dry-run
 | `templates/` | `cwd()/.claude/` | everything (`*`) — all files are platform-managed |
 | `templates-root/` | `cwd()/` (project root) | `.specify/extensions/git/scripts/**`, `.specify/extensions/git/commands/**`, `.specify/extensions/git/extension.yml` |
 
-After the copy loop, `main()` runs two **CLAUDE.md injections** regardless of `--force`:
+After the copy loop, and only when `--dry-run` is not set, `main()` performs a series of **idempotent post-copy actions** on the project root (they run regardless of `--force`; each is guarded by a marker or an existence check):
 
-1. **`@.claude/maxi-setup.md` reference** — appended once if not already present; creates `CLAUDE.md` if it doesn't exist yet.
-2. **Maintenance rule** — appended once if the marker `'Al terminar cualquier tarea'` is not found. Instructs Claude to update `CLAUDE.md` whenever the project architecture changes (new routes, modules, patterns, rules). Idempotent.
+1. **`.claude/.version`** — written with the current `package.json` version.
+2. **`@.claude/maxi-setup.md` reference** — appended to `CLAUDE.md` if not present; creates `CLAUDE.md` if it doesn't exist yet.
+3. **`@project-state.md` reference** — appended to `CLAUDE.md` if not present.
+4. **`project-state.md`** — created at the project root with a starter template (componentes / features / patrones tables) if it doesn't exist.
+5. **Maintenance rule** — appended to `CLAUDE.md` if the marker `` 'actualizar `project-state.md`' `` is not found. Instructs Claude to keep `project-state.md` updated when the architecture changes or a component/feature is completed.
+6. **Version-check rule** — appended to `CLAUDE.md` if the marker `'OBLIGATORIO al inicio de cada sesión — verificar versión de zeclio-setup-claude'` is not found. Tells Claude to compare `.claude/.version` against Nexus at session start and self-update with `npx zeclio-setup-claude@latest --force` if they differ.
 
 `processTemplates(srcDir, destDir, alwaysOverwritePrefixes)` does the following:
 
@@ -119,7 +123,7 @@ templates-root/
 
 **CLAUDE.md is not a template file** — it is written/patched by the injection logic at the end of `main()`, not by `processTemplates()`. Adding content to `CLAUDE.md` requires editing the injection block in `zeclio-setup-claude.js`, not dropping a file in `templates-root/`.
 
-**`memory/project-state.md` is not a template file either** — it is created once by the injection logic if it doesn't exist, and is never overwritten (not even with `--force`). Each project accumulates its own history there. Putting it in `templates/` would reset project-specific content on `--force` runs.
+**`project-state.md` is not a template file either** — it is created once **at the project root** by the post-copy logic (not by `processTemplates()`) if it doesn't exist, and is never overwritten (not even with `--force`). Each project accumulates its own history there. Putting it in `templates/` would reset project-specific content on `--force` runs.
 
 #### About `docs/`
 
@@ -147,6 +151,8 @@ The `docs/` folder contains context documents loaded by Claude Code when it open
 
 Both are read from `process.argv` at module load time.
 
+> **`--dry-run` only previews the template-copy phase.** The entire post-copy block (`.version`, the `CLAUDE.md` injections, and `project-state.md` creation) is gated by `if (!DRY_RUN)`, so it is neither simulated nor logged in a dry run — a `--dry-run` output does not reflect the `CLAUDE.md` changes that a real run would make.
+
 ---
 
 ## Regla de mantenimiento
@@ -154,6 +160,8 @@ Both are read from `process.argv` at module load time.
 - **Al terminar cualquier tarea**, actualizar este archivo si algo cambió en la arquitectura del proyecto: nueva lógica de inyección en el script, nuevos archivos en templates, cambios en el flujo de sincronización, nuevas flags. No registrar cambios de contenido de docs — eso es responsabilidad del historial de git.
 
 - **Al documentar una nueva excepción ZEUS en `mwc.md`**, replicarla siempre en `templates/docs/mwc.md` (este repo) y registrarla en la tabla de la sección 7 de `SETUP.md`. Las excepciones ZEUS son reglas obligatorias — deben viajar a todos los proyectos en el próximo `npx zeclio-setup-claude`.
+
+- **`SETUP.md` y `SETUP_EN.md` en la raíz del repo** son la guía del equipo para el sistema de doc-sync e instalación (distintos del `templates-root/SETUP.md`, más corto, que viaja a cada proyecto). Se mantienen **en espejo ES/EN**: todo cambio de contenido va a ambos con la misma estructura de secciones, y al publicar una versión nueva se actualiza la referencia de versión de ejemplo en ambos.
 
 ---
 

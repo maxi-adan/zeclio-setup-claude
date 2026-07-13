@@ -192,18 +192,20 @@ Al implementar, Claude aplica automáticamente todas las reglas de CLAUDE.md:
 
 ## 6. Comandos disponibles (referencia rápida)
 
-| Comando                 | Cuándo usarlo                                             |
-| ----------------------- | --------------------------------------------------------- |
-| `/speckit-specify`      | **Siempre primero.** Crea la spec desde descripción libre |
-| `/speckit-clarify`      | Si la spec tiene dudas críticas sin resolver              |
-| `/speckit-plan`         | Genera el plan técnico a partir de la spec                |
-| `/speckit-tasks`        | Genera tareas ordenadas desde el plan                     |
-| `/speckit-implement`    | Ejecuta las tareas del tasks.md                           |
-| `/speckit-analyze`      | Audita consistencia entre spec, plan y tareas             |
-| `/speckit-checklist`    | Genera un checklist personalizado para la feature         |
-| `/speckit-constitution` | Crea/actualiza los principios del proyecto                |
-| `/speckit-git-feature`  | Crea rama de feature manualmente (normally auto-hook)     |
-| `/speckit-git-commit`   | Commit automático del estado actual                       |
+Cada comando corre con un modelo asignado en el frontmatter de su `SKILL.md` para optimizar costo: las operaciones de git usan `haiku` (son mecánicas) y el resto `sonnet`. El modelo se aplica solo durante ese comando; tu sesión vuelve a su modelo normal al terminar.
+
+| Comando                 | Modelo   | Cuándo usarlo                                             |
+| ----------------------- | -------- | --------------------------------------------------------- |
+| `/speckit-specify`      | `sonnet` | **Siempre primero.** Crea la spec desde descripción libre |
+| `/speckit-clarify`      | `sonnet` | Si la spec tiene dudas críticas sin resolver              |
+| `/speckit-plan`         | `sonnet` | Genera el plan técnico a partir de la spec                |
+| `/speckit-tasks`        | `sonnet` | Genera tareas ordenadas desde el plan                     |
+| `/speckit-implement`    | `sonnet` | Ejecuta las tareas del tasks.md                           |
+| `/speckit-analyze`      | `sonnet` | Audita consistencia entre spec, plan y tareas             |
+| `/speckit-checklist`    | `sonnet` | Genera un checklist personalizado para la feature         |
+| `/speckit-constitution` | `sonnet` | Crea/actualiza los principios del proyecto                |
+| `/speckit-git-feature`  | `haiku`  | Crea rama de feature manualmente (normally auto-hook)     |
+| `/speckit-git-commit`   | `haiku`  | Commit automático del estado actual                       |
 
 ---
 

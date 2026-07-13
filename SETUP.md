@@ -6,6 +6,8 @@ Este documento explica cómo funciona el sistema que mantiene los documentos de 
 
 ## Tabla de contenidos
 
+> ⭐ **[Primeros pasos — instalar el paquete en tu proyecto](#primeros-pasos--instalar-el-paquete-en-tu-proyecto)** — si es tu primera vez, leé esto antes que nada.
+
 1. [Cómo funciona el sistema (visión general)](#1-cómo-funciona-el-sistema)
 2. [Quién hace qué](#2-quién-hace-qué)
 3. [Setup inicial — una sola vez por máquina](#3-setup-inicial--una-sola-vez-por-máquina)
@@ -21,6 +23,67 @@ Este documento explica cómo funciona el sistema que mantiene los documentos de 
 13. [Excepciones ZEUS en `mwc.md`](#13-excepciones-zeus-en-mwcmd)
 14. [Disparar la Action manualmente](#14-disparar-la-action-manualmente)
 15. [Troubleshooting](#15-troubleshooting)
+
+---
+
+## Primeros pasos — instalar el paquete en tu proyecto
+
+> **Para quién:** cualquier desarrollador que va a trabajar en un microfrontend ZEUS por primera vez en su máquina. Si ya tenés el proyecto andando y Claude actualizándose solo, no necesitás repetir esto.
+
+`zeclio-setup-claude` es un paquete npm **privado** publicado en el Nexus de Maxi. No está en el npm público, así que hay dos requisitos antes de poder instalarlo: **acceso a Nexus** y **configurar npm para que apunte ahí**.
+
+> 📌 **Antes que nada: solicitá el acceso a Nexus a tu líder de equipo** (un usuario/credenciales o directamente el `_authToken` de npm). Sin ese acceso no vas a poder instalar el paquete. El detalle está en el Paso 1.
+
+**Versión actual del paquete:** `3.0.3` — verificá siempre la última con:
+
+```powershell
+npm view zeclio-setup-claude version --registry=https://artifacts.maxilabs.net/repository/maxi-npm-group/
+```
+
+### Paso 1 — Solicitá acceso a Nexus a tu líder
+
+El paquete vive en un registry privado protegido con autenticación. **Pedile a tu líder de equipo:**
+
+- Un usuario/credenciales de Nexus, o directamente el **`_authToken` de npm** para el registry.
+- Confirmación de la URL del registry de consumo (grupo): `https://artifacts.maxilabs.net/repository/maxi-npm-group/`.
+
+> Sin esto, cualquier `npx zeclio-setup-claude` falla con `404 Not Found` (npm no sabe dónde buscar el paquete) o `401 Unauthorized` (falta el token).
+
+### Paso 2 — Configurá npm para usar el registry de Maxi
+
+Creá o editá tu archivo `.npmrc`. Puede ser **global** (afecta toda tu máquina) o **por proyecto** (recomendado si además trabajás con paquetes de otros registries).
+
+- **Global:** `~/.npmrc` (Mac/Linux) o `C:\Users\<tu-usuario>\.npmrc` (Windows).
+- **Por proyecto:** un `.npmrc` en la raíz del repo (agregalo a `.gitignore` si contiene el token).
+
+Contenido:
+
+```ini
+registry=https://artifacts.maxilabs.net/repository/maxi-npm-group/
+//artifacts.maxilabs.net/repository/maxi-npm-group/:_authToken=NpmToken.<el-que-te-dio-tu-líder>
+```
+
+> El registry de grupo también sirve los paquetes públicos de npm (los proxea), así que ponerlo como `registry` por defecto **no rompe** la instalación de tus otras dependencias.
+
+Verificá que quedó bien configurado:
+
+```powershell
+npm view zeclio-setup-claude version
+# Debe devolver un número de versión (ej. 3.0.3), no un error de auth
+```
+
+### Paso 3 — Corré el comando en la raíz de tu proyecto
+
+```powershell
+cd <tu-proyecto-microfrontend>
+npx zeclio-setup-claude
+```
+
+Esto arma toda la estructura `.claude/` (docs de plataforma, skills de SpecKit, settings), crea o actualiza `CLAUDE.md`, y deja `SETUP.md`, la constitution y `project-state.md` en la raíz. El detalle completo de qué archivos toca está en la [sección 7](#7-cómo-actualizar-los-proyectos-microfrontend).
+
+### Paso 4 — Abrí el proyecto en Claude Code y listo
+
+A partir de acá **no tenés que volver a correr el comando manualmente**: al inicio de cada sesión Claude compara tu versión instalada contra la de Nexus y se auto-actualiza si hay una nueva (ver [sección 8](#8-auto-actualización-automática)). Tu único trabajo recurrente es programar features — con SpecKit para las grandes ([sección 10](#10-speckit)) o pidiéndole a Claude directamente en el chat para las chicas.
 
 ---
 
@@ -342,13 +405,19 @@ npx zeclio-setup-claude
 | `SETUP.md` en la raíz | Solo se copia si no existe todavía — nunca sobreescribe |
 | `.specify/memory/constitution.md` | Solo se copia si no existe todavía — nunca sobreescribe |
 | `.specify/extensions.yml`, `init-options.json`, `git-config.yml` | Solo se copia si no existe todavía |
-| `CLAUDE.md` | Se inyectan bloques si todavía no están presentes (idempotente) |
+| `project-state.md` (raíz) | Se **crea** una sola vez si no existe — nunca se sobreescribe (ni con `--force`). Acumula el historial del proyecto (componentes y features completadas); Claude lo mantiene actualizado al terminar cada tarea. |
+| `CLAUDE.md` | Se crea si no existe. Se inyectan de forma idempotente: las referencias `@.claude/maxi-setup.md` y `@project-state.md`, la regla de auto-verificación de versión, y las reglas de mantenimiento. |
 
 > Si querés resetear todos los archivos a sus valores de template (no solo los docs), corrés:
 > ```powershell
 > npx zeclio-setup-claude --force
 > ```
 > **Usalo con cuidado** — sobreescribe también archivos que el equipo pudo haber personalizado.
+
+> Para **ver qué haría sin escribir nada** (útil antes de correr un `--force`), agregá `--dry-run`:
+> ```powershell
+> npx zeclio-setup-claude --dry-run
+> ```
 
 ---
 
@@ -727,7 +796,7 @@ Principios ZEUS que SpecKit usa como gate de calidad en `/speckit-plan` y `/spec
 
 ### Inyecciones en `CLAUDE.md`
 
-Las dos inyecciones que se agregan a `CLAUDE.md` en cada proyecto están **hardcodeadas en `zeclio-setup-claude.js`**, no son un archivo de template. Para agregar una nueva inyección:
+Las inyecciones que se agregan a `CLAUDE.md` en cada proyecto están **hardcodeadas en `zeclio-setup-claude.js`** (no son un archivo de template). Actualmente son cuatro: la referencia `@.claude/maxi-setup.md`, la referencia `@project-state.md`, las reglas de mantenimiento, y la regla de auto-verificación de versión al inicio de sesión. Además, el script **crea `project-state.md`** en la raíz si no existe. Para agregar una nueva inyección:
 
 1. Editá el bloque `if (!DRY_RUN)` al final de `main()` en `zeclio-setup-claude.js`.
 2. Seguí el patrón existente:
@@ -823,6 +892,8 @@ github.com/maxi-adan/zeclio-setup-claude
 
 | Problema | Causa probable | Solución |
 |---|---|---|
+| `npm ERR! 404 ... 'zeclio-setup-claude'` al correr `npx` | npm no está apuntando al registry de Nexus | Configurá el `.npmrc` con el registry de grupo (ver [Primeros pasos, paso 2](#primeros-pasos--instalar-el-paquete-en-tu-proyecto)) |
+| `npm ERR! 401 Unauthorized` / `E401` al instalar | Falta el `_authToken` o expiró | Pedile a tu líder un token nuevo de Nexus y actualizá el `.npmrc` |
 | `gh: command not found` (Windows) | `gh` no está instalado o la terminal no cargó el PATH nuevo | Abrí una terminal nueva. Si persiste: `winget install --id GitHub.cli` |
 | `gh: command not found` (Mac) | Igual que arriba | Abrí una terminal nueva. Si persiste: `brew install gh` |
 | `Could not access maxi-adan/zeclio-setup-claude` (Windows) | `GH_TOKEN` no está definido o es inválido | Verificá: `echo $env:GH_TOKEN`. Si está vacío, repetí el paso 3.2 |

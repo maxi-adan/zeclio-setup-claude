@@ -28,6 +28,8 @@ npm config get registry
 # Debe mostrar: https://artifacts.maxilabs.net/repository/maxi-npm-group/
 ```
 
+> Necesitás **acceso al Nexus de Maxi** — pedíselo a tu líder de equipo. Si el registry requiere autenticación, agregá el `_authToken` que te den en tu `.npmrc`. Sin esto, `npx zeclio-setup-claude` falla con `404` o `401`.
+
 ---
 
 ## Uso
@@ -90,13 +92,15 @@ zeclio-setup-claude
     └── speckit-*/SKILL.md      ← Skills de SpecKit (specify, plan, tasks, implement, …)
 ```
 
-> `docs/` **siempre se sobreescribe** en cada ejecución para mantener la documentación actualizada.
-> El resto de archivos en `.claude/` solo se crea si no existe — nunca sobreescribe.
+> **Todo lo que está en `.claude/`** (docs, skills, `maxi-setup.md`, `settings.json`) **se sobreescribe en cada ejecución** — son archivos de plataforma que se mantienen sincronizados con la versión del paquete. `.version` también se regenera.
+> Cada `SKILL.md` declara el modelo con el que se ejecuta (`haiku` para los `speckit-git-*`, `sonnet` para el resto) para optimizar costo.
+> `settings.local.json`, si existe, nunca se toca — es específico del proyecto.
 
 ### En la raíz del proyecto
 
 ```
 SETUP.md                                ← Guía de flujo de trabajo ZEUS (SpecKit, docs, versión)
+project-state.md                        ← Historial del proyecto (componentes, features) — Claude lo mantiene al día
 .specify/
 └── memory/
     └── constitution.md                 ← Principios ZEUS pre-llenados (módulos, auth, controles, permisos)
@@ -105,16 +109,18 @@ SETUP.md                                ← Guía de flujo de trabajo ZEUS (Spec
 
 > Al correr `/speckit-specify`, Claude pregunta el tipo de rama (`feat` o `fix`) antes de crearla. La rama resultante sigue el patrón `feat/NNN-nombre` o `fix/NNN-nombre`.
 
-> `SETUP.md` y `constitution.md` solo se crean si no existen — en re-ejecuciones se respetan los cambios del proyecto.
+> `SETUP.md`, `constitution.md` y `project-state.md` solo se crean si no existen — en re-ejecuciones se respetan los cambios del proyecto.
 
 ### En `CLAUDE.md`
 
-El script **inyecta dos bloques** en `CLAUDE.md` si no están ya presentes (crea el archivo si no existe):
+El script **inyecta varios bloques idempotentes** en `CLAUDE.md` si no están ya presentes (crea el archivo si no existe):
 
 | Inyección | Contenido |
 |---|---|
 | Referencia de sesión | `@.claude/maxi-setup.md` — Claude la carga al inicio de cada sesión |
-| Regla de mantenimiento | Instrucción para que Claude actualice `CLAUDE.md` cuando cambie la arquitectura del proyecto |
+| Referencia de estado | `@project-state.md` — historial del proyecto |
+| Regla de auto-actualización | Verificar `.claude/.version` contra Nexus al inicio de sesión y actualizar con `--force` si difieren |
+| Regla de mantenimiento | Instrucción para que Claude mantenga `project-state.md` al día cuando cambie la arquitectura del proyecto |
 
 > `CLAUDE.md` **no es un archivo de template** — el script lo parchea directamente. Agregar más inyecciones requiere editar `zeclio-setup-claude.js`.
 
