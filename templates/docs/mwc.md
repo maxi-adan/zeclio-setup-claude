@@ -59,6 +59,14 @@ return (
 
 ---
 
+### `MsDialog` — scroll lock robusto ante múltiples diálogos y otros modales
+
+`MsDialog` bloquea el scroll general de la página (`<html>` y `<body>`) mientras cualquier instancia esté `visible`, usando un contador de referencias compartido entre **todas** las instancias — soporta diálogos simultáneos/en secuencia sin desbloquear el scroll hasta que cierre el último. El bloqueo se hace agregando/quitando una clase CSS propia (`ms-dialog-scroll-lock`, definida en `global.css`/`global-zeclio.css`), **nunca** leyendo ni escribiendo el `overflow` inline directamente — así que convive de forma segura con cualquier otro bloqueador de scroll independiente que ya exista en el microfront (por ejemplo el `Modal`/`Offcanvas` de `react-bootstrap`, usado en varios microfronts de ZEUS).
+
+> Si ves el scroll general "atascado" después de cerrar un diálogo, o que no se bloquea al abrir uno, verifica primero que el CSS del proyecto (`global.css`/`global-zeclio.css`) esté reconstruido — no solo el JS/TSX del componente. Ambos deben regenerarse juntos.
+
+---
+
 ### `MsTable` — siempre usar `size="small"`
 
 El default del componente es `size="normal"`, pero en ZEUS todos los usos deben ser `size="small"`.
@@ -133,27 +141,6 @@ Cuando el contenido de un `MsDialog` depende de datos que cambian entre apertura
 
 ---
 
-### `MsTable` — cambiar `columns` en caliente también necesita `key` para forzar remount
-
-**Problema**: si el array `columns` cambia de contenido mientras `<MsTable>` sigue montado (ej. una tabla que permite ocultar/mostrar columnas desde un toggle), reconciliar la MISMA instancia in-place puede lanzar `TypeError: Cannot read properties of null (reading 'insertBefore')` / `(reading 'nodeType')` apuntando a `<ms-table>`. Misma causa raíz que el bug de `MsDialog` de arriba: `MsTable` monta sus propios React roots para columnas con `render` en JSX (ver [Framework detection in ms-table](#framework-detection-in-ms-table)) — el diff de Stencil sobre el light DOM corre en paralelo al commit de esos React roots anidados cuando `columns` cambia de forma (columnas que aparecen/desaparecen), y ambos terminan pisándose.
-
-**Solución:** mismo patrón que `MsDialog` — agregar `key` derivado del set de columnas visibles. React destruye y remonta `MsTable` completo cuando `key` cambia, evitando la reconciliación in-place que causa el crash.
-
-```jsx
-// ✅ CORRECTO — key fuerza remount completo cuando cambia el set de columnas visibles
-const visibleColumns = columns.filter((c) => !hiddenKeys.has(c.key));
-const visibleColumnsKey = visibleColumns.map((c) => c.key).join(",");
-
-<MsTable key={visibleColumnsKey} columns={visibleColumns} data={data} size="small" />;
-
-// ❌ INCORRECTO — misma instancia reconcilia in-place, puede crashear
-<MsTable columns={visibleColumns} data={data} size="small" />;
-```
-
-**Aplica cuando:** la tabla permite ocultar/mostrar columnas dinámicamente (toolbox de columnas, preferencias de usuario), o cualquier otro caso donde `columns` cambie de tamaño/orden en caliente. `data` sí puede cambiar libremente sin este problema — solo `columns` (la estructura) dispara el conflicto.
-
----
-
 ### `removeChild` en componentes con popup/overlay — estado de la librería
 
 **Causa raíz:** los componentes con `shadow: false` que usan renderizado condicional (`{condition && <div>}`) para mostrar/ocultar un popup o overlay pueden lanzar `NotFoundError: Failed to execute 'removeChild' on 'Node'` cuando Stencil intenta reconciliar el vdom justo mientras un evento externo (click-outside, touchstart) todavía propaga sobre el mismo nodo.
@@ -223,54 +210,6 @@ import "maxi-web-components/global-zeclio.css";
 ```
 
 Para overrides de variables o clases internas, ver [Sección 3 — CSS variables reference](#3-theming-system-and-css-variables).
-
----
-
-### `MsButton` — íconos custom deben pasarse por el prop `icon`, no como children
-
-**Problema**: `MsButton` solo aplica su pipeline de recoloreo por variante (`filter: brightness(0) invert(1)` + un filtro específico de color por variante, ej. `.ms-button.outline-secondary img { filter: ... }`) a lo que reciba vía el prop `icon` (una URL, renderizada internamente como `<img src={icon}>`). Un ícono pasado como *children* (slot) — un `<svg>` a mano o cualquier componente que no sea `MsIcon` — se renderiza igual (el slot no discrimina por tipo de contenido), pero **se salta por completo ese pipeline de recoloreo**: el color queda fijo en lo que el propio SVG defina, sin adaptarse a la variante del botón.
-
-**Fuente**: confirmado leyendo `ms-button.tsx`'s `render()`:
-
-```tsx
-[this.label ? this.label : <slot />, this.icon && <img class={...} src={this.icon} />]
-```
-
-y `ms-button.css`:
-
-```css
-.ms-button img {
-  filter: brightness(0) invert(1);
-}
-.ms-button.outline-secondary img {
-  filter: brightness(0) saturate(100%) invert(34%) ...;
-}
-```
-
-**Patrón correcto — ícono custom (sin asset de archivo) vía data URI:**
-
-```jsx
-// ✅ CORRECTO — data URI por el prop `icon`, se recolorea solo según variant
-function svgDataUri(paths) {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
-  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
-}
-
-const EXPAND_ICON = svgDataUri('<path d="M4 9V4h5"/>...');
-
-<MsButton icon={EXPAND_ICON} onClickEvent={...} />;
-```
-
-```jsx
-// ❌ INCORRECTO — el SVG se ve, pero con color fijo, sin recoloreo por variant
-<MsButton onClickEvent={...}>
-  <svg stroke="#374151">...</svg>
-</MsButton>
-```
-
-> `stroke="black"` (o cualquier color oscuro) en el SVG fuente es importante — `brightness(0) invert(1)` aplana la imagen a una silueta blanca antes de recolorearla, así que el color original del SVG no importa para el resultado final, solo su forma/opacidad.
-
-**`MsIcon` como children sigue siendo válido** — no pasa por este pipeline (no es un `<img>`), pero tiene su propio manejo de color vía el prop `color` (default `currentColor`). Esta excepción aplica solo a SVGs/imágenes custom hechas a mano que se quieran integrar con el theming automático de `MsButton`.
 
 ---
 
@@ -565,67 +504,101 @@ import "maxi-web-components/global-zeclio.css";
 
 Every component consumes CSS custom properties defined in `global.css` / `global-zeclio.css`. In ZEUS these variables are already available in the full DOM via the styleguide. Override them in your project's global stylesheet to change component appearance without touching component code.
 
-**Color palette (actual values from `global-zeclio.css`):**
+**Why these variables matter — the two-tier fallback pattern.** Almost every color/spacing value inside a component's own `.css` file is written as `var(--maxi-x, <hardcoded-fallback>)`, e.g. `ms-navbar.css`: `--ms-navbar-sidebar-bg: var(--maxi-navbar-sidebar-bg, #ffffff)`. This means:
+- If `--maxi-navbar-sidebar-bg` is **not** defined anywhere in the page's CSS, the component silently uses its own hardcoded fallback — nothing breaks, but you're not theming through the system.
+- The moment you declare that same variable name anywhere in scope (`:root`, a parent element, or the component's own `class`), the component picks it up automatically — **you can override a variable even if it never appears in `global.css`/`global-zeclio.css`**, because the fallback pattern is what makes it overridable, not the global file. The global stylesheets only *pre-seed* the most commonly-themed ones; check the component's own `.css` source for the full list of `--maxi-<component>-*` names it actually reads if you need one that isn't in the table below.
+- Prefer overriding the **semantic** tokens (`--maxi-color-primary`, `--maxi-color-action-button`, etc.) over component-specific ones whenever possible — most component tokens default to `var(--maxi-color-x)` themselves (see the table below), so one semantic override cascades everywhere instead of having to repeat it per component.
 
-```css
-:root {
-  --maxi-color-primary: #043F8F;
-  --maxi-color-secondary: #AAD156;       /* accent / active states */
-  --maxi-color-action-button: #458C44;
-  --maxi-color-white: #FFFFFF;
-  --maxi-color-disabled: #777777;
-  --maxi-color-info: #CFE2FF;            /* info background */
-  --maxi-color-info-text: #0252BF;
-  --maxi-color-success: #ECF4EC;         /* success background */
-  --maxi-color-success-text: #1A7832;
-  --maxi-color-warning: #FCF5EA;         /* warning background */
-  --maxi-color-warning-text: #965F0B;
-  --maxi-color-alert: #F4CFCF;           /* danger background */
-  --maxi-color-alert-text: #911E1E;
-}
-```
+**Two themes exist — pick one, never both.** `global.css` (base/standard) and `global-zeclio.css` (ZUS/Zeclio) define the **same variable names with different values** — this is what lets the exact same component code render differently per project. Side-by-side for the core palette:
 
-**Per-component override variables:**
+| Variable | `global.css` (base) | `global-zeclio.css` (ZEUS) |
+|---|---|---|
+| `--maxi-color-primary` | `#043F8F` | `#213A71` |
+| `--maxi-color-secondary` | `#AAD156` | `#425CC7` |
+| `--maxi-color-action-button` | `#458C44` | `#458C44` (same) |
+| `--maxi-color-disabled` | `#777777` | `#F0F3F6` |
+| `--maxi-color-disabled-text` | `#FFFFFF` | `#757575` |
+| `--maxi-color-info` / `-text` | `#CFE2FF` / `#0252BF` | `#E7F1FF` / `#0D6EFD` |
+| `--maxi-color-success` / `-text` | `#ECF4EC` / `#1A7832` | `#EDFAF3` / `#45CB85` |
+| `--maxi-color-warning` / `-text` | `#FCF5EA` / `#965F0B` | `#FFF9E7` / `#FFBE0B` |
+| `--maxi-color-alert` / `-text` | `#F4CFCF` / `#911E1E` | `#FEF0ED` / `#F65252` |
+
+> Don't hardcode either column's hex values in a microfront's own CSS as "the" primary color — read `var(--maxi-color-primary)` instead, so switching themes (or the theme itself being retuned later) doesn't silently desync your custom styles from the component library's.
+
+**Per-component override variables** (defaults shown are from `global.css`; `global-zeclio.css` overrides several of these too — check that file directly for the exact ZEUS value before assuming):
 
 | Group | Variable | Default |
 |---|---|---|
 | **Inputs** | `--maxi-input-border-color` | `#E0E1E0` |
+| | `--maxi-input-text-color` | `#2C2B2C` |
+| | `--maxi-input-placeholder-color` | `#777777` |
 | | `--maxi-input-focus-border-color` | `#006CFF` |
 | | `--maxi-input-invalid-border-color` | `#C81010` |
 | | `--maxi-input-label-color` | `#2C2B2C` |
-| | `--maxi-input-disabled-background` | `#F5F5F5` |
+| | `--maxi-input-disabled-background` / `-text-color` | `#F5F5F5` / `#777777` |
 | | `--maxi-input-dropdown-hover-background` | `#E8F4EA` |
 | | `--maxi-input-dropdown-active-background-color` | `#C3DF89` |
+| **Checkbox / Radio** | `--maxi-checkbox-disabled-background` | `#C2C2C2` |
+| | `--maxi-radio-disabled-background-color` | `#C2C2C2` |
 | **Button** | `--maxi-button-primary-background` | `var(--maxi-color-primary)` |
 | | `--maxi-button-primary-hover-background` | `#133787` |
+| | `--maxi-button-secondary-background` | `#425CC7` |
 | | `--maxi-button-success-background` | `var(--maxi-color-action-button)` |
-| | `--maxi-button-alert-background` | `#C81010` |
 | | `--maxi-button-warning-background` | `#F0C42B` |
-| | `--maxi-button-disabled-background` | `var(--maxi-color-disabled)` |
+| | `--maxi-button-alert-background` | `#C81010` |
+| | `--maxi-button-disabled-background` / `-text-color` | `var(--maxi-color-disabled)` / `var(--maxi-color-disabled-text)` |
+| | `--maxi-button-outline-<variant>-*` | transparent bg + colored border/text per variant (primary/secondary/success/warning/alert), same hover/disabled families as above |
 | **Tooltip** | `--maxi-tooltip-background` | `var(--maxi-color-secondary)` |
 | | `--maxi-tooltip-text-color` | `#000000` |
 | | `--maxi-tooltip-font-weight` | `500` |
 | **Accordion** | `--maxi-accordion-header-background` | `var(--maxi-color-secondary)` |
 | | `--maxi-accordion-header-text-color` | `var(--maxi-color-primary)` |
 | | `--maxi-accordion-content-text-color` | `#131313` |
-| **Badge** | `--maxi-badge-info-background` | `var(--maxi-color-info)` |
-| | `--maxi-badge-success-background` | `var(--maxi-color-success)` |
-| | `--maxi-badge-warning-background` | `var(--maxi-color-warning)` |
-| | `--maxi-badge-alert-background` | `var(--maxi-color-alert)` |
-| **Table** | `--maxi-table-header-background` | `#3577D2` |
-| | `--maxi-table-header-text-color` | `var(--maxi-color-white)` |
+| **Badge** | `--maxi-badge-info-background` / `-text-color` | `var(--maxi-color-info)` / `var(--maxi-color-info-text)` |
+| | `--maxi-badge-success-background` / `-text-color` | `var(--maxi-color-success)` / `var(--maxi-color-success-text)` |
+| | `--maxi-badge-warning-background` / `-text-color` | `var(--maxi-color-warning)` / `var(--maxi-color-warning-text)` |
+| | `--maxi-badge-alert-background` / `-text-color` | `var(--maxi-color-alert)` / `var(--maxi-color-alert-text)` |
+| | `--maxi-badge-basic-background` / `-default-background` | `var(--maxi-color-basic)` / `#F4F6F8` |
+| **Table** | `--maxi-table-header-background` / `-text-color` | `#3577D2` / `var(--maxi-color-white)` |
+| | `--maxi-table-header-nested-background` | `#f8f8f8` |
 | | `--maxi-table-border-color` | `#b4b4b4` |
-| **Calendar** | `--maxi-calendar-active-background-color` | `var(--maxi-color-secondary)` |
+| **Paginator** | `--maxi-paginator-background` | `var(--maxi-color-white)` |
+| | `--maxi-paginator-active-text-color` | `#F0F5FF` |
+| **Calendar** | `--maxi-calendar-header-background` / `-text-color` | `transparent` / `#000000` |
+| | `--maxi-calendar-days-background` / `-text-color` | `transparent` / `#777777` |
 | | `--maxi-calendar-today-background` | `var(--maxi-color-action-button)` |
-| | `--maxi-calendar-arrow-color` | `#006CFF` |
-| **Chips** | `--maxi-chips-background` | `#F0F5FF` |
-| | `--maxi-chips-input-border-color` | `#376BCF` |
-| **Popover** | `--maxi-popover-bg` | `var(--maxi-color-white)` |
-| | `--maxi-popover-border` | `#e2e8f0` |
-| | `--maxi-popover-shadow` | `0 4px 12px rgba(0,0,0,0.15)` |
-| **Menubar** | `--maxi-menubar-background` | `var(--maxi-color-primary)` |
-| | `--maxi-menubar-hover-background` | `var(--maxi-color-secondary)` |
+| | `--maxi-calendar-active-background-color` | `var(--maxi-color-secondary)` |
+| | `--maxi-calendar-arrow-color` / `-border-color` | `#006CFF` / `var(--maxi-calendar-arrow-color)` |
+| **Chips** | `--maxi-chips-background` / `-input-background` | `#F0F5FF` / `#f3f4f6` |
+| | `--maxi-chips-input-text-color` / `-border-color` | `#376BCF` / `#376BCF` |
+| **Menubar** | `--maxi-menubar-background` / `-text-color` | `var(--maxi-color-primary)` / `var(--maxi-color-white)` |
+| | `--maxi-menubar-hover-background` / `-active-text-color` | `var(--maxi-color-secondary)` |
+| **Cascade menu** | `--maxi-cascade-menu-background` / `-text-color` | `var(--maxi-color-primary)` / `var(--maxi-color-white)` |
+| | `--maxi-cascade-menu-hover-background` / `-active-background` | `var(--maxi-color-secondary)` |
 | **Carousel** | `--maxi-carousel-nav-background` | `var(--maxi-color-action-button)` |
+| | `--maxi-carousel-indicator-background` / `-hover-background` | `#d1d5db` / `#9ca3af` |
+| **Popover** | `--maxi-popover-bg` | `var(--maxi-color-white)` |
+| | `--maxi-popover-border` / `-arrow-border` | `#e2e8f0` / `#cbd5e1` |
+| | `--maxi-popover-shadow` | `0 4px 12px rgba(0,0,0,0.15)` |
+| | `--maxi-popover-close-color` / `-hover-color` / `-hover-bg` | `#64748b` / `#334155` / `#f1f5f9` |
+| **Text editor** | `--maxi-text-editor-border-color` / `-background` | `#B2BED9` / `var(--maxi-color-white)` |
+| | `--maxi-text-editor-toolbar-background` | `#F2F2F2` |
+| | `--maxi-text-editor-toolbar-button-hover-background` / `-active-background` | `#e5e7eb` / `#d1d5db` |
+| **Timeline** | `--maxi-timeline-event-separator-marker-background` | `#6f80a7` |
+| | `--maxi-timeline-event-separator-connector-background` | `#dee2e6` |
+| **Breadcrumb** | `--maxi-breadcrumb-icon-width` | `14px` |
+| **Global backgrounds** | `--maxi-background` | `#F2F6FC` |
+
+**Responsive breakpoints** — the library ships its own breakpoint tokens so a microfront's own responsive CSS can stay consistent with the library's internal media queries (`ms-navbar`, `ms-paginator`, `ms-table`, etc. all key their own `@media` rules off these same pixel values):
+
+| Variable | Value |
+|---|---|
+| `--maxi-breakpoint-xs` | `480px` |
+| `--maxi-breakpoint-sm` | `640px` |
+| `--maxi-breakpoint-md` | `768px` |
+| `--maxi-breakpoint-lg` | `1024px` |
+
+> These are plain CSS custom properties, not real media-query breakpoints — CSS can't yet interpolate a variable into a `@media (max-width: ...)` rule. Use them as documentation/consistency reference (read the value, hardcode the same number in your own media query) rather than expecting `@media (max-width: var(--maxi-breakpoint-md))` to work.
 
 **How to override — global vs scoped (recommended pattern in ZEUS):**
 
@@ -809,7 +782,10 @@ Text field with floating label, validation and error states. `shadow: false`. Al
 | `value`        | `any`     | `null`             | Current value (mutable — updated on input)   |
 | `maxLength`    | `number`  | `null`             | Maximum character count                      |
 | `disabled`     | `boolean` | `null`             | Disabled state                               |
+| `readonly`     | `boolean` | `false`            | Focusable/submitted with a form but not user-editable |
+| `name`         | `string`  | `null`             | Native HTML `name` attribute                 |
 | `required`     | `boolean` | `false`            | Required field; triggers built-in validation |
+| `requiredMessage` | `string` | `'This field is required'` | Overrides the default required-field error text |
 | `invalid`      | `boolean` | `false`            | External error state                         |
 | `errorMessage` | `string`  | `null`             | Error text (only shown when `invalid=true`)  |
 
@@ -819,9 +795,11 @@ Text field with floating label, validation and error states. `shadow: false`. Al
 
 **Validation logic:**
 - `isInvalid = invalid || internalInvalid` (either external flag or required-check failure)
-- When `required=true` and field is empty → shows `"This field is required"` (hardcoded, not configurable)
+- When `required=true` and field is empty → shows `requiredMessage` (default `"This field is required"`, override via the `requiredMessage` prop)
 - When `invalid=true` and `errorMessage` is set → shows `errorMessage`
 - `errorMessage` is **ignored** if only `required` validation fails (the built-in message takes over)
+
+**Accessibility:** the `<input>` gets `aria-invalid="true"/"false"` reflecting `isInvalid`, and `aria-describedby` pointing at the error message element only while an error is shown. That error element has `role="alert"` so screen readers announce it the moment it appears (e.g. on blur-triggered validation), not only once the input already has focus.
 
 **Events:**
 
@@ -902,6 +880,8 @@ Password input with optional strength indicator and show/hide toggle. **`shadow:
 **Host CSS classes** (for external styling when `shadow: true` doesn't cover it):
 `invalid` · `completed` · `disabled` · `strength-none` · `strength-weak` · `strength-medium` · `strength-strong`
 
+**Accessibility:** the input carries `aria-invalid`/`aria-disabled`, plus `aria-describedby` pointing at the strength overlay when `feedback` is set; the show/hide toggle button has `aria-label` ("Show password"/"Hide password") and `aria-pressed`; the strength overlay itself is `role="status"` so strength changes get announced.
+
 **Events:**
 
 | Event            | Payload             | Description                                   |
@@ -948,7 +928,10 @@ Numeric input with locale formatting, currency support, and optional +/− spinn
 | `suffix`            | `string`                 | `undefined`         | Text appended inside the input value string (not a DOM element)      |
 | `placeholder`       | `string`                 | `undefined`         | Placeholder (only visible when focused, if `label` is set)           |
 | `disabled`          | `boolean`                | `false`             | Disabled state                                                       |
+| `readonly`          | `boolean`                | `false`             | Focusable/submitted with a form but not user-editable                |
+| `name`              | `string`                 | `undefined`         | Native HTML `name` attribute                                         |
 | `required`          | `boolean`                | `false`             | Required field — triggers built-in validation                        |
+| `requiredMessage`   | `string`                 | `'This field is required'` | Overrides the default required-field error text               |
 | `invalid`           | `boolean`                | `false`             | External error state                                                 |
 | `errorMessage`      | `string \| null`         | `null`              | Error text — only shown when `invalid=true`                          |
 
@@ -957,9 +940,11 @@ Numeric input with locale formatting, currency support, and optional +/− spinn
 - **Without `label`**: standard input. Placeholder always visible.
 
 **Validation logic** (identical to `ms-input-field`):
-- `required=true` + empty → shows `"This field is required"` (hardcoded)
+- `required=true` + empty → shows `requiredMessage` (default `"This field is required"`, override via the `requiredMessage` prop)
 - `invalid=true` + `errorMessage` set → shows `errorMessage`
 - `errorMessage` is ignored when only `required` fails
+
+**Accessibility:** same `aria-invalid`/`aria-describedby` + `role="alert"` error wiring as `ms-input-field`.
 
 **Events:**
 
@@ -1010,11 +995,14 @@ OTP (One-Time Password) input. Renders N individual single-character boxes. `sha
 | `type`         | `'numeric' \| 'text' \| 'password'` | `'text'`         | Character type (see below)                           |
 | `value`        | `any \| null`                       | `null`           | Full code as string (mutable, reactive via `@Watch`) |
 | `disabled`     | `boolean`                           | `false`          | Disabled state (sets `readOnly` + `disabled`)        |
+| `readonly`     | `boolean`                           | `false`          | Focusable/submitted with a form but not user-editable |
+| `name`         | `string`                            | `null`           | Native HTML `name` attribute                         |
 | `invalid`      | `boolean`                           | `false`          | External error state                                 |
 | `autoFocus`    | `boolean`                           | `false`          | Focus first box on mount (100 ms delay)              |
 | `placeholder`  | `string`                            | `''`             | Placeholder character shown in each empty box        |
 | `errorMessage` | `string \| null`                    | `null`           | Error text — only shown when `invalid=true`          |
 | `required`     | `boolean`                           | `false`          | Required — valid only when **all** boxes are filled  |
+| `requiredMessage` | `string`                         | `'This field is required'` | Overrides the default required-field error text |
 | `customClass`  | `string`                            | `''`             | Extra CSS class on each box                          |
 
 **`type` rendering:**
@@ -1033,28 +1021,26 @@ OTP (One-Time Password) input. Renders N individual single-character boxes. `sha
 
 **Validation (`required`):**
 - Valid only when `value.trim().length === length` (all boxes filled)
-- Falls back to `"This field is required"` when incomplete (hardcoded)
+- Falls back to `requiredMessage` (default `"This field is required"`) when incomplete
 - `errorMessage` only shown when `invalid=true`
 
 **Events:**
 
 | Event              | Payload                                                                   | Description                                              |
 | ------------------ | ------------------------------------------------------------------------- | -------------------------------------------------------- |
-| `inputEvent`       | `string`                                                                  | Joined value on every keystroke                          |
-| `completeEvent`    | `string`                                                                  | Joined value on every keystroke **and** on paste — not just when all boxes are filled |
+| `inputEvent`       | `string`                                                                  | Joined **partial or full** value on every keystroke       |
+| `completeEvent`    | `string`                                                                  | Joined value — fires **only once all boxes are filled** (on the completing keystroke, or after a paste that fills every box) |
 | `focusEvent`       | `number`                                                                  | Index of the box that received focus                     |
 | `blurEvent`        | `number`                                                                  | Index of the box that lost focus                         |
 | `validationChange` | `{ isValid: boolean; fieldId: string; value: string; errorMessage: string }` | Emitted when validity changes                         |
 
-> `completeEvent` fires on **every** keystroke (and paste) with the current partial or full string — not only when all boxes are filled. Use `e.detail.length === length` to detect a truly complete code.
+> `completeEvent` only fires once the code is fully filled — use `inputEvent` instead if you need the partial value on every keystroke. No length check is needed on `completeEvent`'s payload.
 
 ```html
 <ms-input-otp length="6" type="numeric"></ms-input-otp>
 <script>
   const otp = document.querySelector("ms-input-otp");
-  otp.addEventListener("completeEvent", (e) => {
-    if (e.detail.length === 6) verifyCode(e.detail);
-  });
+  otp.addEventListener("completeEvent", (e) => verifyCode(e.detail));
 </script>
 ```
 
@@ -1064,9 +1050,7 @@ OTP (One-Time Password) input. Renders N individual single-character boxes. `sha
   length={6}
   type="numeric"
   autoFocus
-  onCompleteEvent={(e) => {
-    if (e.detail.length === 6) verifyCode(e.detail);
-  }}
+  onCompleteEvent={(e) => verifyCode(e.detail)}
 />
 ```
 
@@ -1081,8 +1065,11 @@ Toggle switch (on/off). `shadow: false`.
 | `checked`         | `boolean`                       | `false`     | Checked state — `reflect: true`, `mutable: true`              |
 | `class`           | `string`                        | `undefined` | Extra CSS class — **only applied when `tooltip` is also set** |
 | `disabled`        | `boolean`                       | `undefined` | Disabled state                                                |
+| `readonly`        | `boolean`                       | `false`     | Focusable/submitted with a form but not user-togglable (sets `aria-readonly`) |
+| `name`            | `string`                        | `undefined` | Native HTML form `name`                                       |
+| `value`           | `string`                        | `undefined` | Value submitted when checked (native default `"on"`)          |
 | `tooltip`         | `string`                        | `undefined` | Tooltip text. When not set, `ms-tooltip` is not rendered      |
-| `tooltipPosition` | `'top'\|'bottom'\|'left'\|'right'` | `undefined` | Tooltip placement. Source type is `Position.Right` (likely should be `Position` — all 4 values work at runtime) |
+| `tooltipPosition` | `Position` (`'top'\|'bottom'\|'left'\|'right'`) | `undefined` | Tooltip placement — all 4 values work at runtime |
 
 > **No `label` prop.** Place a `<label>` element next to the component manually if a label is needed.
 
@@ -1119,15 +1106,25 @@ Styled checkbox with label support.
 | ---------- | ---------- | --------- | ----------- | --------------------------------------------------------------------- |
 | `checked`  | `checked`  | `boolean` | `false`     | Checked state. Reflected to HTML attribute; can be set programmatically |
 | `disabled` | `disabled` | `boolean` | `undefined` | Disabled state                                                        |
+| `readonly` | `readonly` | `boolean` | `false`     | Focusable/submitted with a form but not user-togglable (sets `aria-readonly`) |
 | `label`    | `label`    | `string`  | `undefined` | Label text rendered as `<label htmlFor={inputId}>`                   |
 | `inputId`  | `input-id` | `string`  | `undefined` | `id` on the inner `<input>` — required for label click to work       |
 | `name`     | `name`     | `string`  | `undefined` | HTML `name` attribute — use to group in forms                        |
 | `value`    | `value`    | `string`  | `undefined` | HTML `value` attribute on the inner `<input>`                        |
 | `class`    | `class`    | `string`  | `undefined` | Extra CSS class applied to the inner `<input>` element               |
+| `required` | `required` | `boolean` | `false`     | Required field — triggers built-in validation on toggle/blur         |
+| `invalid`  | `invalid`  | `boolean` | `false`     | External error state                                                  |
+| `errorMessage` | `error-message` | `string` | `undefined` | Error text — only shown when `invalid=true`                      |
+| `requiredMessage` | `required-message` | `string` | `'This field is required'` | Overrides the default required-field error text |
 
-> No `invalid` or `required` props — this component has no built-in validation state.
+`ms-checkbox` supports the **same validation pattern as `ms-input-field`/`ms-radio`**: set `required` to validate on toggle/blur, `invalid`+`errorMessage` for externally-driven error state, `requiredMessage` to customize the default message, and listen for `validationChange`.
 
-**Events:** `checkboxChange` — emits `boolean` (the new `checked` state).
+**Events:**
+
+| Event | Payload | Description |
+|---|---|---|
+| `checkboxChange` | `boolean` | New `checked` state |
+| `validationChange` | `{ isValid: boolean; fieldId: string; value: boolean; errorMessage: string }` | Emitted when validity changes |
 
 ```tsx
 // React
@@ -1149,18 +1146,28 @@ Styled radio button. `shadow: false` — external CSS penetrates.
 | Prop       | Type                | Default     | Description                                                           |
 | ---------- | ------------------- | ----------- | --------------------------------------------------------------------- |
 | `idRadio`  | `string`            | `undefined` | HTML `id` for the input — required to link `<label>` via `htmlFor`    |
-| `name`     | `string`            | `undefined` | Group name for HTML radio grouping (also used as native input `value`) |
+| `name`     | `string`            | `undefined` | Group name for HTML radio grouping — used as the native input's `value` **only when `value` is left unset** |
 | `label`    | `string`            | `undefined` | Label text                                                            |
-| `value`    | `string`            | `undefined` | Component-level value prop — **not passed to the native input**; use `name` to identify the radio in a group |
+| `value`    | `string`            | `undefined` | Passed straight through to the native `<input value>` whenever set — falls back to `name` only if omitted |
 | `checked`  | `boolean` (reflect, mutable) | `undefined` | Selected state                                         |
 | `disabled` | `boolean`           | `undefined` | Disabled                                                              |
+| `readonly` | `boolean`           | `false`     | Focusable/submitted with a form but not user-selectable (sets `aria-readonly`) |
+| `required` | `boolean`           | `false`     | Required — validated **per radio** (invalid while this radio is unchecked), not per-group |
+| `invalid`  | `boolean`           | `false`     | External error state                                                  |
+| `errorMessage` | `string`        | `undefined` | Error text — only shown when `invalid=true`                          |
+| `requiredMessage` | `string`     | `'This field is required'` | Overrides the default required-field error text          |
 | `class`    | `string`            | `undefined` | Extra CSS class on the native `<input>` element                       |
 
 > **`radioChange` emits `boolean`, not a value string.** The event emits `isChecked` (`true` when the radio is selected). It does NOT emit the `value` prop. To identify which radio was selected, use the `name` or `value` props in your handler's context.
 
-> **Native input uses `name` as its HTML `value` attribute** (not the `value` prop). This is a quirk of the implementation.
+> **`required`/`invalid`/`errorMessage`/`requiredMessage` validate per radio, not per group.** There's no built-in "at least one of these N radios is checked" group validation — for that, rely on the native `required` attribute forwarded to the input inside a real `<form>`, or validate the group's selection yourself.
 
-**Events:** `radioChange` — emits `boolean` (`true` when selected).
+**Events:**
+
+| Event | Payload | Description |
+|---|---|---|
+| `radioChange` | `boolean` | `true` when this radio becomes selected |
+| `validationChange` | `{ isValid: boolean; fieldId: string; value: boolean; errorMessage: string }` | Emitted when validity changes |
 
 ```tsx
 // React — radio group
@@ -1211,6 +1218,10 @@ Integer stepper with + and − buttons. Uses **`shadow: true`** — element styl
 | `changeEvent` | `number` | On button click, blur, or ArrowUp/Down key (NOT on each keystroke)      |
 | `inputEvent`  | `number` | On every value change, including individual keystrokes while typing     |
 
+**Accessibility:** the host has `role="group"` and `aria-invalid` (reflecting `error`); the `<input>` exposes `aria-valuemin`/`aria-valuemax`/`aria-valuenow`; the floating label is `aria-live="polite"`; the +/− buttons have `aria-label="Increase value"`/`"Decrease value"`; the error text has `role="alert"`.
+
+**Paste behavior:** pasted text is sanitized the same way as typed input — non-digit characters are stripped and the result is inserted at the cursor position, capped at 16 digits (to stay within `Number.MAX_SAFE_INTEGER`).
+
 ```tsx
 // React — basic usage
 <MsControlNumber
@@ -1258,7 +1269,7 @@ The `:host` defaults to `display: inline-block` and `--ms-cn-width: 160px`. To m
 
 #### `ms-knob`
 
-Rotary dial control for selecting numeric values. **`shadow: true`** — CSS is encapsulated. Interaction is **drag-based** (mouse and touch); not click-based.
+Rotary dial control for selecting numeric values. **`shadow: true`** — CSS is encapsulated. Interaction is **drag-based** (mouse and touch) **and fully keyboard-accessible**.
 
 | Prop            | Type      | Default     | Description                                                 |
 | --------------- | --------- | ----------- | ----------------------------------------------------------- |
@@ -1280,6 +1291,8 @@ Rotary dial control for selecting numeric values. **`shadow: true`** — CSS is 
 > `changeValue` only emits when the value actually changes (`newValue !== this.value`).
 
 > **`shadow: true`** — `rangeColor`, `valueColor`, `textColor` are the only way to customize colors from outside. Host classes `ms-knob--disabled` and `ms-knob--readonly` are available for external CSS targeting.
+
+**Keyboard support:** focus the dial (the inner `<svg>` carries `tabIndex=0`, or `-1` when `disabled`) and use `ArrowUp`/`ArrowRight` to increment by `step`, `ArrowDown`/`ArrowLeft` to decrement by `step`, `Home` to jump to `min`, `End` to jump to `max`. The dial exposes `role="slider"` with `aria-valuemin`/`aria-valuemax`/`aria-valuenow`/`aria-valuetext` (driven by `valueTemplate`) for screen readers, plus `aria-disabled`/`aria-readonly`. `readOnly` disables both drag and keyboard interaction while still displaying the value and exposing it to assistive tech — combine with `disabled` as needed.
 
 **Events:**
 
@@ -1304,23 +1317,27 @@ Rotary dial control for selecting numeric values. **`shadow: true`** — CSS is 
 
 #### `ms-input-group`
 
-**CSS-only utility — not a web component.** Groups inputs with addons (text, icons, buttons, selects) in a single flex row using two CSS classes: `.ms-input-group` (container) and `.ms-input-group-addon` (non-input cell).
+**Now a real web component (not just a CSS convention).** Groups inputs with addons (text, icons, buttons, selects) in a single flex row. Layout still comes from two CSS classes (`.ms-input-group` container, `.ms-input-group-addon` non-input cell — plain `<div class="ms-input-group">` markup keeps working with zero changes), but the `<ms-input-group>` tag now also propagates group-level `disabled`/`invalid` state to its recognized `ms-*` form children.
 
-> Never use `<ms-input-group>` as a tag — it doesn't exist. Use a plain `<div class="ms-input-group">`.
+| Prop       | Attribute  | Type      | Default     | Description                                                           |
+| ---------- | ---------- | --------- | ----------- | ---------------------------------------------------------------------|
+| `disabled` | `disabled` | `boolean` | `undefined` | When set, propagated to every recognized `ms-*` child. Leave `undefined` to control children individually. |
+| `invalid`  | `invalid`  | `boolean` | `undefined` | When set, propagated to children that support an invalid state (all recognized children **except** `ms-button` and `ms-input-switch`). Leave `undefined` to control individually. |
 
-**CSS classes:**
+Propagation runs on initial mount and again via a `MutationObserver` watching for children added/removed later — dynamically-inserted children still get `disabled`/`invalid` applied. Setting either prop back to `undefined` stops the group from touching that attribute at all (it does **not** force children back to `false`); explicitly set `false` if you need to force-clear it.
+
+**Recognized child tags for propagation:** `ms-input-field`, `ms-input-number`, `ms-autocomplete`, `ms-dropdown`, `ms-multiselect`, `ms-calendar`, `ms-chips`, `ms-select-button`, `ms-control-number`, `ms-checkbox`, `ms-radio`, `ms-input-switch`, `ms-button`.
+
+**CSS classes (still apply regardless of whether you use the `<ms-input-group>` tag or a plain `<div>`):**
 
 | Class                  | Element | Description                                                   |
 | ---------------------- | ------- | ------------------------------------------------------------- |
 | `.ms-input-group`      | `div`   | Flex row container. Adapts to 100% width of its parent.       |
 | `.ms-input-group-addon`| `span`  | Non-input cell (text, SVG, `ms-checkbox`, `ms-input-switch`). |
 
-**Compatible children (inside `.ms-input-group` directly, no addon wrapper):**
-`ms-input-field`, `ms-input-number`, `ms-button`, `ms-dropdown`, `ms-autocomplete`, `ms-select-button`, `ms-chips`, `ms-calendar`, `ms-control-number`
-
 **Rules:**
 - `ms-button` placed directly in the group integrates flush (no border-radius gap).
-- There is **no global `disabled`** on the group — disable each child individually.
+- Use the `<ms-input-group>` tag (not a plain `<div>`) when you want group-level `disabled`/`invalid` propagation; a plain `<div class="ms-input-group">` still works for layout-only usage.
 - Multiple consecutive `.ms-input-group-addon` spans are valid (icon + label).
 - Multiple input children in the same group are valid (e.g. First name / Last name).
 
@@ -1354,6 +1371,12 @@ Rotary dial control for selecting numeric values. **`shadow: true`** — CSS is 
   <span class="ms-input-group-addon"><ms-checkbox></ms-checkbox></span>
   <ms-input-field placeholder="I accept the terms"></ms-input-field>
 </div>
+
+<!-- Group-level disabled/invalid propagation (use the <ms-input-group> tag, not a plain div) -->
+<ms-input-group disabled="{isSubmitting}" invalid="{hasGroupError}">
+  <ms-input-field placeholder="First name"></ms-input-field>
+  <ms-input-field placeholder="Last name"></ms-input-field>
+</ms-input-group>
 ```
 
 ---
@@ -1378,8 +1401,11 @@ Select/dropdown with floating label, optional search, and group support. `shadow
 | `required`     | `required`       | `boolean`                  | `false`           | Required — validates on selection change        |
 | `invalid`      | `invalid`        | `boolean`                  | `false`           | Force error state from outside                  |
 | `errorMessage` | `error-message`  | `string \| null`           | `null`            | Error text — shown when `invalid=true` or `required` fails |
+| `requiredMessage` | `required-message` | `string`                | `'This field is required'` | Overrides the default required-field error text |
 | `class`        | `class`          | `string \| null`           | `null`            | Extra CSS class on the dropdown box             |
 | `idComponent`  | `id-component`   | `string \| null`           | `'ms-dropdown'`   | `id` used for label linkage and `validationChange.fieldId` |
+
+**Accessibility and keyboard navigation:** follows the ARIA listbox combobox pattern. The trigger has `role="button"`, `aria-haspopup="listbox"`, `aria-expanded`, `aria-controls`, `aria-activedescendant` (pointing at the highlighted option), `aria-disabled`, and `aria-labelledby` (when `label` is set). The option list is `role="listbox"` with each option as `role="option"`/`aria-selected`; groups get `role="group"`/`aria-label`. Keyboard: `ArrowDown`/`ArrowUp` open the menu and move the highlighted option, `Home`/`End` jump to the first/last visible option, `Enter`/`Space` selects the highlighted option (or opens a closed menu), `Escape` closes the menu (and, from inside the search input, also returns focus to the trigger).
 
 **Interfaces:**
 
@@ -1474,16 +1500,22 @@ Multi-select with search, select-all and groups. `shadow: false` — external CS
 | `class`               | `string \| null`             | `null`               | Extra CSS class on the trigger box element               |
 | `disabled`            | `boolean`                    | `false`              | Disabled                                                 |
 | `required`            | `boolean` (mutable)          | `false`              | Required — validated on selection change                 |
+| `requiredMessage`     | `string`                     | `'This field is required'` | Overrides the default required-field error text    |
 | `invalid`             | `boolean`                    | `false`              | Visual error state                                       |
 | `errorMessage`        | `string \| null`             | `null`               | Error message shown when `invalid=true`                  |
+| `remoteFilter`        | `boolean`                    | `false`              | Disables built-in client-side filtering — filter `options` yourself server-side in response to the `filter` event |
+| `debounceTime`        | `number`                     | `300`                | Debounce (ms) applied to the `filter` event               |
+| `loading`             | `boolean` (mutable)          | `false`              | Shows a "Loading..." row in place of items (e.g. while awaiting a remote filter) |
 
 > **"N items selected"** — when more than 3 items are selected the trigger shows `"N items selected"` regardless of the `display` value. This is automatic, not configurable.
 
-> **Validation:** `errorMessage` only shown when `invalid=true`. When `required` fails, shows hardcoded `"This field is required"`.
+> **Validation:** `errorMessage` only shown when `invalid=true`. When `required` fails, shows `requiredMessage` (default `"This field is required"`).
 
 > **`display='chip'`** — uses `ms-chips` internally. Chips are removable by the user. Does **not** work correctly with `optionGroup=true`.
 
 > **Dropdown position** — menu is rendered `position: fixed` at `zIndex: 9999`. Auto-flips above trigger if there is no space below.
+
+**Accessibility and keyboard navigation:** same ARIA combobox pattern as `ms-dropdown` (`role="button"` trigger with `aria-haspopup`/`aria-expanded`/`aria-controls`/`aria-activedescendant`; `role="listbox"`/`role="option"` list), plus `aria-multiselectable="true"` on the listbox since multiple items can be selected. Keyboard: `ArrowDown`/`ArrowUp` move the highlighted option, `Home`/`End` jump to first/last, `Enter`/`Space` **toggles** the highlighted item (doesn't close the menu), `Escape` closes.
 
 **Events:**
 
@@ -1525,19 +1557,23 @@ Text field with dynamic suggestions (typeahead).
 | `optionGroup`  | `boolean`                  | `false`               | Grouped suggestions — pass `GroupItem[]` via `resolve`   |
 | `disabled`     | `boolean`                  | `false`               | Disabled                                                 |
 | `required`     | `boolean`                  | `false`               | Required field                                           |
+| `requiredMessage` | `string`                | `'This field is required'` | Overrides the default required-field error text     |
 | `invalid`      | `boolean`                  | `false`               | Visual error state                                       |
 | `errorMessage` | `string \| null`           | `null`                | Error message shown below the input when invalid         |
 | `suggestions`  | `{ label, value }[]`       | `[]`                  | Declared prop but **NOT used for display** — pass results via `resolve` (see below) |
+| `debounceTime` | `number`                   | `300`                 | Debounces `completeMethod` while typing (ms) instead of firing on every keystroke |
 
 **Events:**
 
 | Event              | Payload                                                                              | Description                                       |
 | ------------------ | ------------------------------------------------------------------------------------ | ------------------------------------------------- |
-| `completeMethod`   | `{ query: string; resolve: (results: { label: string; value: string }[]) => void }` | User typed — **must call `e.detail.resolve(results)`** to populate dropdown |
+| `completeMethod`   | `{ query: string; resolve: (results: { label: string; value: string }[]) => void }` | User typed (debounced by `debounceTime`) — **must call `e.detail.resolve(results)`** to populate dropdown |
 | `selected`         | `{ label: string; value: string }`                                                   | Item selected from the dropdown                   |
 | `validationChange` | `ValidationDetail`                                                                   | Validation state changed                          |
 
 > **`completeMethod` usa un callback Promise-based.** El componente espera `e.detail.resolve(results)` para mostrar las sugerencias. Llamar `setSuggestions()` o cualquier setState externo **no tiene efecto** — el prop `suggestions` no está conectado a la lista del dropdown.
+
+> **Race-condition guard:** if the user types again (or clears the input) before a slower `completeMethod` call resolves, the stale response is automatically discarded instead of overwriting the newer one — safe to fire real network requests directly from `completeMethod` without your own request-sequencing logic. While waiting for `resolve()`, the dropdown shows a `Loading...` row.
 
 **Item shape:**
 
@@ -1618,7 +1654,7 @@ Tag/chip input with optional autocomplete.
 **Two operating modes (based on `suggestions` prop):**
 
 - **Free entry** (`suggestions` not set): Enter or `,` (per `separator`) adds the typed text as a chip directly.
-- **Autocomplete** (`suggestions` is an array): shows a dropdown filtered by input; Enter/click selects from the list. Input is cleared on blur, already-added items are excluded from suggestions.
+- **Autocomplete** (`suggestions` is an array): shows a dropdown filtered by input; Enter/click selects from the list. Input is cleared on blur, already-added items are excluded from suggestions. The suggestion list renders in a viewport-positioned portal (flips above/below the input based on available space, same as `ms-dropdown`) and shows "Records not found" when nothing matches.
 
 **Keyboard (autocomplete mode):**
 
@@ -1664,6 +1700,7 @@ Segmented control-style selection buttons. Single or multiple selection. `shadow
 | `tooltipPosition` | `'top' \| 'bottom' \| 'left' \| 'right'` | `'top'` | Position for both group and per-item tooltips            |
 | `disabled`        | `boolean`               | `false`              | Disables all buttons                                                        |
 | `required`        | `boolean`               | `false`              | Required — validated on change                                              |
+| `requiredMessage` | `string`                | `'This field is required'` | Overrides the default required-field error text                     |
 | `invalid`         | `boolean`               | `false`              | Visual error state                                                          |
 | `errorMessage`    | `string \| null`        | `null`               | Error message shown when `invalid=true`                                     |
 | `idComponent`     | `string \| null`        | `'ms-select-button'` | HTML `id`                                                                   |
@@ -1677,11 +1714,15 @@ Segmented control-style selection buttons. Single or multiple selection. `shadow
 
 > **Single mode toggles:** clicking the already-selected button deselects it (emits `null`).
 
-> **Validation:** `errorMessage` shown only when `invalid=true`. `required` failure → `"This field is required"`.
+> **Validation:** `errorMessage` shown only when `invalid=true`. `required` failure → `requiredMessage` (default `"This field is required"`).
 
 > **Per-item tooltip:** if an `Item` has a `tooltip` property, that item is individually wrapped in `ms-tooltip`.
 
-**Keyboard navigation:** `←`/`↑` focus previous · `→`/`↓` focus next · `Home` first · `End` last.
+**Accessibility:** each button carries `role="radio"` (single mode) or `role="checkbox"` (multiple mode) with `aria-pressed`/`aria-disabled`/`aria-label={item.label}`; the group wrapper has `role="group"` with `aria-label`/`aria-required`/`aria-invalid`.
+
+**Keyboard navigation:** `←`/`↑` focus previous · `→`/`↓` focus next · `Home` first · `End` last. (Arrow keys only move focus — they don't select; press Enter/Space or click to select.)
+
+**Touch behavior:** tapping a button selects it, but dragging past ~10px before release (e.g. swipe-scrolling a horizontal row of buttons) suppresses the selection instead of accidentally selecting whatever was under the finger.
 
 **Events:**
 
@@ -1747,6 +1788,8 @@ Collapsible sections accordion.
 
 > **`disabled` must be a JS prop.** It is not reflected to an HTML attribute. Pass it as a property: `disabled={[1, 3]}` in React, `.disabled="${[1, 3]}"` in lit-html. Setting it as a string attribute has no effect.
 
+**Accessibility and keyboard navigation:** each header `<button>` has `aria-expanded`/`aria-controls`; each content panel has `role="region"`/`aria-labelledby`. Headers stay in normal Tab order — arrow keys are an enhancement on top of that, not a replacement: when a header has focus, `ArrowUp`/`ArrowDown` (wrapping) and `Home`/`End` move focus between enabled headers.
+
 ```html
 <!-- Vanilla — all sections closed by default (activeIndex defaults to -1) -->
 <ms-accordion>
@@ -1791,6 +1834,8 @@ Tab interface. `shadow: false` — external CSS penetrates.
 | `disabledTabs` | `number[]`                                  | `[]`        | Indexes of disabled tabs — **JS-only, not HTML attribute** |
 
 > **Tab list is read once at `componentWillLoad`.** Dynamically adding or removing child elements after mount will not update the tab buttons or panels.
+
+**Accessibility and keyboard navigation:** the tab bar is `role="tablist"`; each button is `role="tab"` with `aria-selected`/`aria-controls`/`aria-disabled` and a roving `tabIndex` (only the active tab is `0`, the rest are `-1` — so Tab moves focus to the tab bar once, not through every tab). Panels are `role="tabpanel"`/`aria-labelledby`. Once a tab button has focus, `ArrowLeft`/`ArrowRight` move focus **and immediately activate** that tab (automatic-activation model — no separate confirm step), wrapping around the ends and skipping disabled tabs; `Home`/`End` jump to the first/last enabled tab.
 
 **Events:** `tabChange` — emits `{ index: number }`.
 
@@ -1845,7 +1890,7 @@ Breadcrumb navigation.
 | `idPrefix`      | `string`           | `'ms-breadcrumb'`        | Prefix for generated item IDs                     |
 | `customClass`   | `string`           | `''`                     | Extra CSS class on the `<nav>` element            |
 
-**No events.** Clicks are handled via `item.command()` on each `BreadcrumbItem`.
+**Event:** `itemSelect` — `CustomEvent<BreadcrumbItem>`, emitted on click of any non-disabled item (home or model), **before** `item.command()` runs. Call `event.preventDefault()` to cancel the built-in `<a href>` navigation — e.g. to hand the URL to an SPA router instead of a full page load. `item.command()` is still the way to run custom logic per item; `itemSelect` is the simpler hook when you just need to intercept navigation globally.
 
 **`BreadcrumbItem` interface:**
 
@@ -1924,7 +1969,7 @@ Collapsible lateral navigation sidebar with nested menus, accordion behavior and
 | Event           | Payload   | Description                                                    |
 | --------------- | --------- | -------------------------------------------------------------- |
 | `sidebarToggle` | `boolean` | Emits `isCollapsed` — `true` when sidebar just collapsed       |
-| `itemSelect`    | `string`  | Emits the `id` of the leaf item clicked (not parent/group items) |
+| `itemSelect`    | `string`  | Emits the `id` of the leaf item clicked (not parent/group items). Call `event.preventDefault()` to cancel the built-in `window.location.href` navigation for items that have a `url` — e.g. to hand the URL to an SPA router instead |
 
 **Public methods:**
 
@@ -2118,6 +2163,8 @@ interface StepItem {
 
 > **Clicking active or disabled step does nothing.** No event is emitted.
 
+**Accessibility and keyboard navigation:** the active step has `aria-current="step"`; disabled/readonly steps get `aria-disabled="true"`. When `readonly={false}`, step buttons form a roving-tabindex arrow-key group (only the clickable step is `tabIndex=0`): `ArrowRight`/`ArrowDown` moves to the next enabled step, `ArrowLeft`/`ArrowUp` to the previous, `Home`/`End` jump to the first/last enabled step, wrapping around. In the default `readonly={true}` mode nothing is interactive by mouse or keyboard.
+
 **Events:**
 
 | Event        | Payload                                       | Description                                     |
@@ -2168,6 +2215,8 @@ Status badge/label.
 | `class`    | `string`                                       | —         | Extra CSS class on the badge element    |
 
 > **Severity omitida:** aplica la clase CSS `badge-default` (color neutro). No usar `severity="default"` — ese valor no existe; simplemente omitir el prop.
+
+**Accessibility:** severity is conveyed by color alone visually, so when `severity` is one of `info`/`success`/`warning`/`danger`, a visually-hidden screen-reader-only label is prepended to the announced text (e.g. "Success: Active"). This does **not** happen when `severity` is omitted or set to any non-recognized string. Because of this, always give `value` real, self-describing text (e.g. `"Active"`) rather than relying on `severity` alone to convey meaning — a bare color swatch with no descriptive text is still inaccessible even with the severity label.
 
 ```html
 <ms-badge value="Active" severity="success"></ms-badge>
@@ -2236,13 +2285,22 @@ Image component with optional click-to-preview modal (zoom + rotate). Uses **`sh
 | `preview`       | `preview`        | `boolean`          | `false` | Enable click-to-preview modal; shows a magnifier overlay on hover                  |
 | `zoomSrc`       | `zoom-src`       | `string`           | —       | URL for the higher-res image shown in the modal; falls back to `src` if not set    |
 | `indicatorIcon` | `indicator-icon` | `string`           | —       | URL for a custom overlay indicator icon; defaults to a built-in magnifier SVG      |
+| `loading`       | `loading`        | `'lazy' \| 'eager'`| `'lazy'`| Passed straight through to the native `<img loading>` attribute                     |
+| `srcset`        | `srcset`         | `string`           | —       | Passed straight through to `<img srcset>`                                          |
+| `sizes`         | `sizes`          | `string`           | —       | Passed straight through to `<img sizes>` — **only applied when `srcset` is also set** |
+| `fallbackSrc`   | `fallback-src`   | `string`           | —       | Swapped into `<img src>` if the main image fails to load                            |
 
 > **`width`/`height` only accept px values.** Passing `'50%'`, `'auto'`, or `'2rem'` is silently ignored — the dimension will be unset.
+
+**Error handling:** if the image fails to load, `ms-image` swaps to `fallbackSrc` (when set) and emits `imageError` with `{ src }` (the URL that failed); `srcset` is suppressed while in the error state (falls back to plain `src`/`fallbackSrc`). Changing `src` afterward automatically clears the error state — no consumer-side bookkeeping needed to retry with a new URL.
 
 **Preview modal** (requires `preview=true`):
 - Click image → opens modal with zoom and rotation controls
 - Zoom range: 0.4× – 1.5× (step 0.1)
-- Keyboard shortcuts: `Escape` close · `←`/`→` rotate ±90° · `+`/`-` zoom in/out
+- Keyboard shortcuts inside the open modal: `Escape` close · `←`/`→` rotate ±90° · `+`/`-` zoom in/out
+- **Known accessibility gap:** the image gets `tabindex="0"`/`aria-haspopup="dialog"` when `preview` is set, but there is currently no keyboard handler to *open* the modal (Enter/Space) — only a mouse click opens it — and the opened modal (`role="dialog" aria-modal="true"`) is never given focus, so there's no focus trap. Don't rely on the preview modal being keyboard-operable end-to-end yet.
+
+**Events:** `imageError` — `{ src: string }`, emitted once per failed load (guarded so it doesn't re-fire for the same error state).
 
 **Slots:** `indicatorIcon` — custom overlay indicator content (overrides `indicatorIcon` prop)
 
@@ -2277,13 +2335,20 @@ Inline alert / message banner. `shadow: true` — external CSS does not penetrat
 | ------------- | ------------------------------------------------------------- | -------- | ------------------------ |
 | `variant`     | `'danger' \| 'success' \| 'warning' \| 'info' \| 'secondary'` | `'info'` | Color / semantic variant |
 | `noIcon`      | `boolean`                                                     | `false`  | Hide the built-in icon   |
+| `closable`    | `boolean`                                                     | `false`  | Shows a close button; clicking it un-renders the message entirely and emits `closeEvent` |
 | `customClass` | `string`                                                      | `''`     | Extra CSS class on inner container |
 
 > **Content via slot:** there is no `text` prop. Place content in the **default slot**.
 
-> **No `severity` prop, no `closable`, no `life`.** Use `variant` instead of `severity`.
+> **No `severity` prop, no `life`.** Use `variant` instead of `severity`. (There **is** a `closable` prop — see below.)
 
 > **`secondary` icon:** `secondary` variant uses the same icon as `info` (both fall to the default case internally).
+
+**Closing:** set `closable` to show a dismiss button (uses the shared `CloseIcon`). Clicking it sets internal state so the component renders `<Host></Host>` (fully empty) and emits `closeEvent` (no payload). There's no prop to bring it back afterward — remount the component or gate it behind your own state if you need to show it again.
+
+**Accessibility:** `variant="danger"` renders with `role="alert" aria-live="assertive"` (interrupts screen readers immediately); every other variant uses `role="status" aria-live="polite"`. Both also get `aria-atomic="true"`.
+
+**Events:** `closeEvent` — no payload, fired once when the close button (shown via `closable`) is clicked.
 
 **Slots:** default — message content (text, HTML, or other components).
 
@@ -2293,12 +2358,21 @@ Inline alert / message banner. `shadow: true` — external CSS does not penetrat
 <ms-message variant="danger">
   <strong>Error:</strong> Could not connect to the server.
 </ms-message>
+
+<ms-message variant="warning" closable>
+  This action cannot be undone.
+</ms-message>
 ```
 
 ```tsx
 // React
 <MsMessage variant="warning">
   Please review the highlighted fields before continuing.
+</MsMessage>
+
+// React — closable
+<MsMessage variant="danger" closable onCloseEvent={() => setShowError(false)}>
+  Could not connect to the server.
 </MsMessage>
 ```
 
@@ -2315,18 +2389,18 @@ Floating toast notification. Controlled entirely via **props** — there is no `
 | `severity`    | `'info' \| 'success' \| 'warning' \| 'alert'`                                                                 | `'info'`      | Semantic type                                            |
 | `summary`     | `string \| null`                                                                                              | `null`        | Title / summary text                                     |
 | `detail`      | `string \| null`                                                                                              | `null`        | Body / detail text                                       |
-| `life`        | `number \| null`                                                                                              | `3000`        | Auto-hide delay in ms                                    |
+| `life`        | `number \| null`                                                                                              | `3000`        | Auto-hide delay in ms — see "persistent toasts" below     |
 | `position`    | `'top-left' \| 'top-center' \| 'top-right' \| 'center' \| 'bottom-left' \| 'bottom-center' \| 'bottom-right'` | `'top-right'` | Screen position                                          |
+| `closable`    | `boolean`                                                                                                     | `false`       | Shows a manual close button                              |
+| `stackIndex`  | `number`                                                                                                      | `0`           | Manual stacking offset — see "stacking multiple toasts" below |
 
 > **Severity values:** `'info'`, `'success'`, `'warning'`, `'alert'`. Not `'warn'` or `'error'`.
 
 > **No `show()` method.** Toggle `visible` to show/hide.
 
-> **`life: null` does NOT keep it visible.** The component uses `setTimeout(fn, this.life)` with no null guard — `setTimeout(fn, null)` fires immediately (0 ms). To keep a notification visible indefinitely, there is no built-in mechanism; you must manage visibility entirely from outside.
+**Persistent toasts:** `life={null}` (or `0`, or a negative number) now makes the toast **persistent** — no auto-dismiss timer is ever started. It only hides via the close button (`closable`) or by externally setting `visible={false}`. Use this instead of any manual `setTimeout` workaround.
 
-> **No `visibleChange` event.** The component has no `@Event()`. When the `life` timeout expires it sets `visible = false` internally via the mutable prop — but React state is NOT updated. This means if your React state stays `visible: true`, setting it to `true` again will not re-trigger the `@Watch` and the notification won't show again. **Always reset your state back to `false`** after showing.
-
-**Correct usage pattern in React:**
+**Recommended pattern — listen to `visibleChange`, don't manually reset state:**
 
 ```tsx
 const [notif, setNotif] = useState({
@@ -2337,10 +2411,7 @@ const [notif, setNotif] = useState({
 });
 
 function showSuccess(msg: string) {
-  // 1. Set visible: true to show
   setNotif({ visible: true, severity: "success", summary: "Done", detail: msg });
-  // 2. Manually reset state after life duration — required to allow re-triggering
-  setTimeout(() => setNotif((n) => ({ ...n, visible: false })), 3000);
 }
 
 <MsNotification
@@ -2349,8 +2420,24 @@ function showSuccess(msg: string) {
   summary={notif.summary}
   detail={notif.detail}
   life={3000}
+  closable
+  onVisibleChange={(e) => setNotif((n) => ({ ...n, visible: e.detail }))}
+  onCloseEvent={() => setNotif((n) => ({ ...n, visible: false }))}
 />;
 ```
+
+**Stacking multiple toasts:** showing several `ms-notification` instances at the same `position` simultaneously **auto-cascades** them even with no `stackIndex` set (an internal per-position registry computes the offset). Set `stackIndex` explicitly only if you need manual control over the cascade order. Whether the stack visually cascades up or down is derived from `position` (any `bottom-*` position stacks upward).
+
+**Interaction:** hovering a notification pauses its auto-dismiss countdown; moving the pointer away resumes it with the remaining time.
+
+**Accessibility:** `severity="alert"` renders with `role="alert" aria-live="assertive"`; every other severity uses `role="status" aria-live="polite"` (both also `aria-atomic="true"`). The summary/detail/icon content is only mounted in the DOM while the toast is visible (rather than just CSS-hidden) — this is intentional: a live region whose text never actually changes often isn't (re-)announced by assistive tech, so showing the same message twice needs a genuine DOM insertion each time, not just a visibility toggle.
+
+**Events:**
+
+| Event           | Payload   | Description                                                                 |
+| --------------- | --------- | ---------------------------------------------------------------------------- |
+| `visibleChange` | `boolean` | Fires every time `visible` changes, for **any** reason (life timeout, close button, or an external prop change) — keep your own state in sync from this instead of manually re-arming a timer |
+| `closeEvent`    | —         | Fires once when the manual close button (shown via `closable`) is clicked; closes instantly, skipping the fade-out transition |
 
 ---
 
@@ -2363,18 +2450,22 @@ Loading skeleton placeholder. `shadow: true` — external CSS does not penetrate
 | `width`        | `string \| null` | `null`  | `'100%'`         | CSS width                                    |
 | `height`       | `string \| null` | `null`  | `'1rem'`         | CSS height                                   |
 | `borderRadius` | `string \| null` | `null`  | `'4px'`          | CSS border-radius                            |
-| `shape`        | `string \| null` | `null`  | —                | Passed as HTML attribute for CSS selector use — **not used in the render template**; to make a circle use `borderRadius="50%"` instead |
+| `shape`        | `string \| null` | `null`  | —                | `'text'`, `'avatar'`, or `'card'` apply a built-in preset (see below); any other value has no style effect and is only useful as an HTML attribute for a CSS selector hook |
 | `class`        | `string \| null` | `null`  | —                | Extra CSS class on the inner div             |
 
 > **No `animation` prop.** The shimmer animation is always active.
 
-> **`shape` prop has no effect on styles or classes in the render.** It is only useful as an HTML attribute if the consuming project's CSS targets `:host([shape="circle"])`. For a reliable circle, use `borderRadius="50%"`.
+> **`shape` presets:** `'text'` (100% × 1rem, 4px radius — same as the component's own defaults), `'avatar'` (40px × 40px, 50% radius — a circle), `'card'` (100% × 200px, 8px radius). Any explicit `width`/`height`/`borderRadius` you pass overrides the matching preset dimension. Any other/unrecognized `shape` value falls through with zero style effect.
 
 ```html
 <ms-skeleton height="200px"></ms-skeleton>
 <ms-skeleton height="1rem" width="60%"></ms-skeleton>
 
-<!-- Circle via borderRadius -->
+<!-- Presets -->
+<ms-skeleton shape="avatar"></ms-skeleton>
+<ms-skeleton shape="card"></ms-skeleton>
+
+<!-- Circle via explicit borderRadius (equivalent to shape="avatar" at custom size) -->
 <ms-skeleton width="50px" height="50px" borderRadius="50%"></ms-skeleton>
 ```
 
@@ -2389,10 +2480,14 @@ Loading skeleton placeholder. `shadow: true` — external CSS does not penetrate
 | `width`  | `string` | `'2rem'`    | CSS width of the spinner         |
 | `height` | `string` | `'2rem'`    | CSS height of the spinner        |
 | `color`  | `string` | `'#8CA2D4'` | Fill color of the animation dots |
+| `label`  | `string` | `'Loading'` | Accessible name announced to screen readers |
+
+**Accessibility:** the host renders `role="status" aria-live="polite" aria-label={label}` — the spinner announces itself to assistive tech with zero extra markup needed from the consumer. `ms-button`'s `loading` state renders an internal `ms-spinner` without setting `label`, so a loading button already announces "Loading" for free.
 
 ```html
 <ms-spinner></ms-spinner>
 <ms-spinner width="3rem" height="3rem" color="#007bff"></ms-spinner>
+<ms-spinner label="Loading results..."></ms-spinner>
 ```
 
 ---
@@ -2471,8 +2566,22 @@ Date and time picker (datepicker).
 | `closeOnSelect`      | `close-on-select`      | `boolean`                              | `false`          | Auto-close after selection. Ignored when `showTime=true`. Range: closes after end date |
 | `disabled`           | `disabled`             | `boolean`                              | `false`          | Disabled                                                                            |
 | `required`           | `required`             | `boolean`                              | `false`          | Required — validates automatically on blur/select                                   |
+| `requiredMessage`    | `required-message`     | `string`                               | `'This field is required'` | Overrides the default required-field error text                          |
 | `invalid`            | `invalid`              | `boolean`                              | `false`          | Force error state                                                                   |
 | `errorMessage`       | `error-message`        | `string \| null`                       | `null`           | Error message shown when `invalid=true`                                             |
+
+**Accessibility and keyboard navigation (day-grid view only):** the day grid is `role="grid"` (`aria-label` = the visible "Month Year"), with `role="row"` per week, `role="columnheader"` for weekday headers, and `role="gridcell"` per day (`aria-selected`, `aria-current="date"` on today, `aria-disabled` on out-of-range days). Only one cell is ever tab-stoppable (roving `tabindex`) — the focused date, or today/start date by default. Keyboard, once the grid has focus:
+
+| Key | Action |
+|---|---|
+| `←` / `→` | Move focus ±1 day (crosses month boundaries automatically) |
+| `↑` / `↓` | Move focus ±1 week (±7 days) |
+| `Home` / `End` | Jump to the start/end of the current week |
+| `PageUp` / `PageDown` | Move ±1 month |
+| `Shift+PageUp` / `Shift+PageDown` | Move ±1 year |
+| `Enter` / `Space` | Select the focused day (no-op if disabled by `minDate`/`maxDate`) |
+
+> This keyboard/ARIA model applies **only to the day-grid view**. The month-list and year-list pickers (opened by clicking the header) are plain unstyled `<ul>`/`<li>` with no roles or keyboard support of their own.
 
 **Events:**
 
@@ -2539,8 +2648,13 @@ Item carousel with drag support and responsive design.
 | `responsiveOptions` | **JS only**         | `ResponsiveOption[]` | `undefined` | Breakpoint overrides — must be a JS prop           |
 | `customClass`       | `custom-class`      | `string`             | `''`        | Extra CSS class on the carousel wrapper            |
 | `dragThreshold`     | `drag-threshold`    | `number`             | `50`        | Min drag pixels to trigger navigation              |
+| `pauseOnHover`      | `pause-on-hover`    | `boolean`            | `true`      | Pause autoplay while the pointer is over the carousel |
+| `lazyLoad`          | `lazy-load`         | `boolean`            | `false`     | Marks `img`/`iframe` inside a slide `loading="lazy"` once it nears the visible area (via `IntersectionObserver`) |
+| `lazyLoadBuffer`    | `lazy-load-buffer`  | `string`             | `'200px'`   | `IntersectionObserver` `rootMargin` used with `lazyLoad`  |
 
 **No events** — this component does not emit custom events.
+
+**Keyboard navigation and focus-based autoplay control:** the slide viewport (`.ms-carousel-content`) is a focusable region (`role="region"`, `aria-roledescription="carousel"`, `tabIndex=0`). `ArrowLeft`/`ArrowRight` step through slides; `Home`/`End` jump to the first/last page. Autoplay automatically pauses while the carousel has focus and resumes on blur — independent of the `pauseOnHover` mouse behavior, so keyboard users aren't fighting an auto-advancing carousel while interacting with it.
 
 **Slots:** `item-carousel-{n}` for each item index (zero-based). One slot per item in `value`.
 
@@ -2602,10 +2716,11 @@ Cascading submenu. Detects desktop/mobile for the open behavior.
 
 **Behavior:**
 
-- Desktop (`window.innerWidth > 768`): menu opens on hover, submenus expand on hover, auto-flips if overflowing right edge
+- Desktop (`window.innerWidth > 768`): menu opens on hover **and** on keyboard focus (`:focus-within`) — submenus were hover-only before a past fix; a keyboard user tabbing/arrow-ing into a nested item can now actually see it, not just reach it invisibly. Auto-flips if overflowing right edge.
 - Mobile (`window.innerWidth <= 768`): menu opens on tap, submenus expand/collapse on tap, full-width panel
-- Escape key closes the menu
 - `action` callback on an item takes priority over URL navigation
+
+**Accessibility and keyboard navigation:** lists are `role="menu"`, links are `role="menuitem"`, dividers are `role="separator"`. The slotted trigger element (whatever real focusable node lives inside it — button, link, etc.) automatically receives `aria-haspopup="menu"`/`aria-expanded`/`aria-controls`, kept in sync as the menu opens/closes. Keyboard: `ArrowUp`/`ArrowDown` move between sibling items, `ArrowRight` enters a submenu, `ArrowLeft` returns to the parent, `Home`/`End` jump to the first/last sibling, `Escape` closes the menu and returns focus to the trigger.
 
 **`CascadeMenuItem` interface:**
 
@@ -2725,7 +2840,14 @@ Modal dialog with slots for header, body, and footer. `shadow: false`.
 
 | Event  | Payload   | Description                                             |
 | ------ | --------- | ------------------------------------------------------- |
-| `hide` | `false`   | Fired when the × button is clicked; always emits `false` |
+| `hide` | `false`   | Fired when the × button is clicked **or** Escape is pressed (when `closable`); always emits `false`. This only emits the event — it does not set `visible` itself, so the consumer must react to it (as in the example below) |
+
+**Focus management (built-in, no configuration needed):**
+- **Escape** closes the dialog when `closable`.
+- **Tab trap:** Tab/Shift+Tab cycles focus within the dialog only, wrapping at both ends. The trap descends into the **shadow roots** of slotted web components (e.g. the real `<button>` inside a slotted `<ms-button>`), so those inner controls are correctly included in the tab cycle.
+- **Focus restore:** on close, focus returns to whatever element triggered the dialog's opening (again descending into a shadow root if the trigger itself was a web component like `<ms-button>`).
+
+**Scroll locking:** while any `ms-dialog` is `visible`, the page's scroll is locked by adding a dedicated CSS class (`ms-dialog-scroll-lock`, defined in `global.css`/`global-zeclio.css`) to **both** `<html>` and `<body>` — it never reads or writes their inline `overflow` style directly, so it's safe to use alongside other independent scroll-lockers on the page (e.g. react-bootstrap's `Modal`/`Offcanvas`). Locking is reference-counted across every currently-open `ms-dialog` instance, so multiple simultaneously-open dialogs (stacked, or opened in sequence) don't unlock the page until the very last one closes.
 
 **Slots:** `header` | default (body) | `footer`
 
@@ -2921,33 +3043,45 @@ In-place editing: shows a display view and switches to edit mode on click. **`sh
 
 #### `ms-text-editor`
 
-Rich text editor (WYSIWYG). `shadow: true` — external CSS does not penetrate.
+Rich text editor (WYSIWYG) with a **custom DOM mutation engine — not `document.execCommand`** (a common misconception since most WYSIWYG editors do use it; this one implements its own `(node, offset)` range-based mutation logic instead, specifically to keep full control over undo/redo and sanitization). `shadow: true` — external CSS does not penetrate.
 
-| Prop          | Type      | Default                       | Description                                              |
-| ------------- | --------- | ----------------------------- | -------------------------------------------------------- |
-| `value`       | `string`  | `''`                          | Current HTML content. Reactive via `@Watch` — updating the prop replaces the editor content |
-| `placeholder` | `string`  | `'Type your content here...'` | Placeholder shown when editor is empty                   |
-| `readonly`    | `boolean` | `false`                       | Read-only mode — toolbar is disabled, editing blocked    |
+| Prop                 | Type                              | Default                       | Description                                              |
+| -------------------- | --------------------------------- | ----------------------------- | -------------------------------------------------------- |
+| `value`              | `string`                          | `''`                          | Current HTML content. Reactive via `@Watch` — updating the prop replaces the editor content |
+| `placeholder`        | `string`                          | `'Type your content here...'` | Placeholder shown when editor is empty                   |
+| `readonly`           | `boolean`                         | `false`                       | Read-only mode — toolbar is disabled, editing blocked    |
+| `headingLevels`      | `number`                          | `3`                           | Number of heading levels (H1..Hn) offered in the toolbar's heading dropdown, capped at 6 |
+| `showCharCount`      | `boolean`                         | `false`                       | Shows a live character counter                            |
+| `maxLength`          | `number`                          | `undefined`                   | Hard cap on content length — blocks further typing and truncates paste once reached |
+| `imageUploadHandler` | `(file: File) => Promise<string>` (mutable) | `undefined`          | Custom async image upload; resolve with the final image URL. Falls back to inline base64 embedding if not set |
 
-**Built-in toolbar formats:** Bold · Italic · Underline · Unordered list · Ordered list. No additional formats configurable.
+**Toolbar:** heading dropdown (Normal + H1..H{`headingLevels`}) · Bold · Italic · Underline · unordered/ordered lists · link insertion (URL-validated, opens `target="_blank" rel="noopener noreferrer"`) · table insertion via a visual rows×cols size picker (Tab/Shift+Tab moves between cells once inside a table) · image insertion (file picker → `imageUploadHandler` or inline base64 fallback) · full undo/redo (`Ctrl+Z` / `Ctrl+Y` / `Ctrl+Shift+Z`, 100-entry history stack).
 
-> **Paste sanitization:** pasted content is cleaned to allowed tags only: `P`, `STRONG`, `B`, `EM`, `I`, `U`, `UL`, `OL`, `LI`, `BR`, `DIV`, `SPAN`. Font colors, sizes, images, tables, and links are stripped.
+> **Paste sanitization allow-list:** `P`, `STRONG`, `B`, `EM`, `I`, `U`, `UL`, `OL`, `LI`, `BR`, `DIV`, `SPAN`, `A`, `H1`-`H6`, `TABLE`, `TBODY`, `TR`, `TD`, `TH`, `IMG` — links, images, tables and headings **do** survive paste (with `href`/`src` checked and unsafe ones stripped); everything else is unwrapped to its text content.
 
 > **Empty content:** when the editor is cleared, `textChange` emits `''` (empty string), not `<p><br></p>`.
 
-> **Implementation note:** uses deprecated `document.execCommand` API internally.
-
 **Events:**
 
-| Event        | Payload  | Description                                                   |
-| ------------ | -------- | ------------------------------------------------------------- |
-| `textChange` | `string` | Emitted on every edit and on blur; detail is the HTML string  |
+| Event               | Payload         | Description                                                   |
+| ------------------- | --------------- | ------------------------------------------------------------- |
+| `textChange`        | `string`        | Emitted on every edit and on blur; detail is the HTML string  |
+| `imageUploadRequest`| `{ file: File }`| Always emitted when a user picks an image file, regardless of whether `imageUploadHandler` is set |
+
+**Method:** `insertImageAtLastRange(url: string, alt?: string): Promise<void>` — programmatically insert an image at the last known cursor position.
 
 ```tsx
 // React
 <MsTextEditor
   value={content}
   placeholder="Write something..."
+  headingLevels={4}
+  showCharCount
+  maxLength={5000}
+  imageUploadHandler={async (file) => {
+    const url = await uploadToStorage(file);
+    return url;
+  }}
   onTextChange={(e) => setContent(e.detail)}
 />
 ```
@@ -2966,12 +3100,14 @@ Floating content panel that opens on click, hover, or focus. State is fully inte
 | `closeOnEscape` | `boolean`                                | `true`     | Close on Escape key                               |
 | `showCloseIcon` | `boolean`                                | `false`    | Show an × button inside the popover               |
 | `customClass`   | `string`                                 | `''`       | Extra CSS class on the wrapper element            |
+| `showDelay`     | `number`                                 | `0`        | Delay (ms) before opening, only for `trigger='hover'` |
+| `hideDelay`     | `number`                                 | `100`      | Delay (ms) before closing after mouseleave, only for `trigger='hover'` |
 
 > **No `visible` prop and no events.** Open/close state is internal-only. There is no way to programmatically control the popover from outside.
 
 > **Auto-flip:** if the preferred `placement` doesn't fit the viewport, tries the opposite side, then `bottom`, then `top` as a final fallback.
 
-> **`trigger='hover'`:** closing is delayed 100 ms after mouseleave. Moving the pointer from the trigger into the popover content cancels the close timeout, keeping it open.
+> **`trigger='hover'` timing is configurable** via `showDelay`/`hideDelay`. Moving the pointer from the trigger into the popover content cancels the pending close, keeping it open.
 
 **Slots:**
 
@@ -3000,7 +3136,7 @@ Floating content panel that opens on click, hover, or focus. State is fully inte
 
 #### `ms-menubar`
 
-Horizontal navigation bar. Responsive: horizontal items on desktop, hamburger + slide-in drawer on mobile (≤ 768px). `shadow: false`. **No events** — navigation handled via `item.url` or `item.action`.
+Horizontal navigation bar. Responsive: horizontal items on desktop, hamburger + slide-in drawer on mobile (≤ 768px). `shadow: false`.
 
 | Prop               | Type                    | Default | Description                                                       |
 | ------------------ | ----------------------- | ------- | ----------------------------------------------------------------- |
@@ -3020,10 +3156,12 @@ Horizontal navigation bar. Responsive: horizontal items on desktop, hamburger + 
 - Item **with `menuData`** → renders as `ms-cascade-menu` trigger (dropdown on desktop, accordion in drawer on mobile)
 - Item **without `menuData`** → renders as `<a>` link
 
-**Navigation (no events):**
+**Navigation:**
 - `item.url` set and not `'#'` → `window.location.href = item.url` on click
 - `item.action` set → called with a `CustomEvent` containing `{ id, label, icon, url, disabled, customClass, menuData, minWidth, originalEvent }`
 - `item.disabled = true` → click is suppressed
+
+**Event:** `itemSelect` — `CustomEvent<string>`, emitted with the clicked item's `id` (top-level items and cascade items inside the mobile drawer alike — only fires for items that have an `id`). Call `event.preventDefault()` in the handler to suppress the built-in `window.location.href` navigation, e.g. to hand the URL to an SPA router instead of a full page load.
 
 **Responsive behavior:**
 - Desktop (`> 768px`): standard horizontal bar
@@ -3197,8 +3335,12 @@ Tooltip on hover. `shadow: false` — external CSS penetrates.
 | `position`    | `'top' \| 'bottom' \| 'left' \| 'right'` | `'top'` | Position relative to the slotted trigger                      |
 | `showContent` | `boolean`                                | `true`  | Set to `false` to disable the tooltip entirely                |
 | `class`       | `string \| null` (mutable)               | `null`  | Extra CSS class on the tooltip bubble element                 |
+| `showDelay`   | `number`                                 | `0`     | Delay (ms) before showing on hover; default preserves the old immediate-open behavior |
+| `hideDelay`   | `number`                                 | `0`     | Delay (ms) before hiding on hover-leave; default preserves the old immediate-close behavior |
 
-> **Hover only — no click, no focus, no delay.** Shows on `mouseenter`, hides immediately on `mouseleave`.
+> **Hover only — no click, no focus.** Shows on `mouseenter`, hides on `mouseleave`, optionally delayed via `showDelay`/`hideDelay`.
+
+> **Auto-repositioning:** the tooltip isn't locked to the requested `position`. If it doesn't fit in the viewport there, it flips to the opposite side, then falls back to `bottom`, then `top` — and is clamped horizontally so it never overflows the left/right viewport edge.
 
 **Slot:** default — element that triggers the tooltip.
 
@@ -3242,6 +3384,8 @@ interface MeterValue {
 
 > **Label value display:** the built-in label list renders `{value}%` — the `%` suffix is hardcoded. If your values are not percentages, override via the `labelList` slot.
 
+**Accessibility:** the bar row wraps in `role="group"`; each individual bar carries `role="progressbar"` with `aria-valuemin`/`aria-valuemax` (from `min`/`max`), `aria-valuenow` (the raw value), `aria-valuetext` (`"{label}: {value}"`), and `aria-label` (`{label}`).
+
 **Slots:** `labelList` (replaces built-in legend entirely) | `start` (before content) | `end` (after content)
 
 ```tsx
@@ -3271,6 +3415,8 @@ HTML fieldset with legend and optional collapse. Uses **`shadow: true`** — CSS
 | `customClass` | `custom-class` | `string`  | `''`    | Extra CSS class on the inner `<fieldset>` element    |
 
 > **No `collapsed` prop and no `toggle` event.** The collapsed state is internal-only (`@State`), always starting expanded. There is no way to control or read the collapsed state from outside.
+
+**Accessibility:** when `toggleable`, the legend exposes `role="button"` and `aria-expanded` (reflects the open/closed state); the collapsible content region always carries `aria-hidden` matching the collapsed state.
 
 **Slots:** default (fieldset content) | `legend` (rich legend content, e.g. with icon)
 
@@ -3304,12 +3450,15 @@ Standalone pagination control (also used internally by `ms-table`). `shadow: fal
 | `totalRecords`        | `number`  | `undefined` | Total record count (required for pagination to work) |
 | `rowsPerPageOptions`  | `Item[]`  | `[{label:'10',value:10},{label:'20',value:20},{label:'30',value:30}]` | Options for rows-per-page dropdown |
 | `showPerPageDropdown` | `boolean` | `true`  | Show rows-per-page `ms-dropdown` |
+| `showGoToPage`        | `boolean` | `false` | Shows a numeric "go to page" input (press Enter to jump) once the page links are truncated with an ellipsis (`totalPages > pageLinkSize`) |
 
 > **Pages are 0-indexed.** Pass `currentPage={0}` for page 1, `currentPage={1}` for page 2, etc. The UI displays page numbers as 1-based.
 
 > **Changing `rows`** resets `currentPage` and `first` to `0` automatically and emits `pageChange`.
 
 > **Project convention:** always set `showPerPageDropdown={false}`. The component default is `true` but this project does not use the rows-per-page selector.
+
+> **Ellipsis ("…") is decorative, not clickable.** No `onClick`, no hover background, no pointer cursor — it just indicates that page links are truncated. Use `showGoToPage` if you want a way to jump directly to a specific page from the truncated state.
 
 **Events:** `pageChange` — emits `{ first: number, rows: number, currentPage: number, totalRecords: number }`.
 
@@ -3330,20 +3479,28 @@ Standalone pagination control (also used internally by `ms-table`). `shadow: fal
 
 #### `ms-preload`
 
-Loading overlay that covers a container. Always visible when rendered — control it with conditional rendering in your framework. `shadow: false` — external CSS penetrates.
+Loading overlay that covers a container. `shadow: false` — external CSS penetrates.
 
-| Prop    | Type     | Default | Description                                                                                          |
-| ------- | -------- | ------- | ---------------------------------------------------------------------------------------------------- |
-| `text`  | `string` | —       | Text shown in the overlay. Ignored if `image` is set. If neither is set, shows `"Loading..."`.       |
-| `image` | `string` | —       | URL of a custom image (rendered at 450px wide). **Takes precedence over `text`** — both cannot show at once. |
+| Prop      | Type      | Default | Description                                                                                          |
+| --------- | --------- | ------- | ---------------------------------------------------------------------------------------------------- |
+| `text`    | `string`  | —       | Text shown in the overlay. Ignored if `image` is set. If neither is set, shows `"Loading..."`.       |
+| `image`   | `string`  | —       | URL of a custom image (rendered at 450px wide). **Takes precedence over `text`** — both cannot show at once. |
+| `visible` | `boolean` | `true`  | Toggles the overlay **without unmounting it** — set `false` to hide it while keeping the element in the DOM |
 
-> **No `visible`, `fullscreen`, or `zIndex` props.** Use conditional rendering to show/hide the overlay, and CSS (`position: fixed`) to cover the full screen.
+> **No `fullscreen`/`zIndex` props.** Use CSS (`position: fixed`) yourself to cover the full screen.
+
+> **Prefer toggling `visible` over conditional rendering** when possible — mounting/unmounting `ms-preload` imperatively in a microfrontend (especially alongside single-spa lifecycle transitions) risks `removeChild` errors if the framework and the mount/unmount logic race each other. Toggling `visible` avoids that race entirely.
+
+**Accessibility:** the overlay carries `role="status"`, `aria-live="polite"`, `aria-atomic="true"`, and `aria-hidden` (set to `"true"` when `visible=false`). When using `image` instead of `text`, an `aria-label` (falling back to `'Loading'`) is applied, since the image itself has no visible text for assistive tech to read.
 
 ```tsx
 // React — conditional rendering
 {
   isLoading && <MsPreload text="Loading data..." />;
 }
+
+// React — toggling visible (recommended, avoids mount/unmount races)
+<MsPreload text="Loading..." visible={isLoading} />
 
 // Full-screen overlay — wrap in a fixed container
 {
@@ -3432,8 +3589,14 @@ File upload with drag-and-drop, validation, progress tracking, and custom upload
 | `mode`                          | `mode`                                | `'basic' \| 'advanced'`                                          | `'advanced'`                    | UI mode — see render modes above                                     |
 | `buttonsPosition`               | `buttons-position`                    | `'top'\|'right'\|'left'\|'bottom-center'\|'bottom-left'`        | —                               | When set, activates drag-zone layout and positions Cancel/Upload here |
 | `multiple`                      | `multiple`                            | `boolean`                                                        | `false`                         | Allow selecting multiple files                                       |
-| `accept`                        | `accept`                              | `string`                                                         | —                               | MIME types or extensions allowed (e.g. `'image/*,.pdf'`)             |
+| `accept`                        | `accept`                              | `string`                                                         | —                               | MIME types or extensions allowed (e.g. `'image/*,.pdf'`) — enforced on both the native file picker **and** drag-and-drop |
 | `maxFileSize`                   | `max-file-size`                       | `number`                                                         | —                               | Maximum file size in bytes; over-limit files emit `validationFailEvent` |
+| `maxFiles`                      | `max-files`                           | `number`                                                         | —                               | Caps the queue size; files past the limit fail validation with `reason: 'count'` |
+| `retryCount`                    | `retry-count`                        | `number`                                                          | `0`                              | Number of automatic retries after an upload failure; `0` preserves fail-immediately behavior |
+| `retryDelay`                    | `retry-delay`                        | `number`                                                          | `1000`                           | Base delay (ms) before a retry — doubles each attempt (exponential backoff) |
+| `chunkedUpload`                 | `chunked-upload`                     | `boolean`                                                         | `false`                          | Opt-in: splits each file into `chunkSize`-byte chunks uploaded sequentially as separate requests (requires backend support for `chunkIndex`/`totalChunks`/`uploadId`/`fileName`/`fileSize` metadata) |
+| `chunkSize`                     | `chunk-size`                         | `number`                                                          | `1_000_000`                      | Size in bytes of each chunk when `chunkedUpload` is enabled |
+| `keepUploadedVisible`           | `keep-uploaded-visible`              | `boolean`                                                         | `false`                          | Opt-in: keeps successfully-uploaded files listed (marked 100%) instead of clearing them from the queue on completion |
 | `url`                           | `url`                                 | `string`                                                         | —                               | Upload endpoint (XHR POST); required when `customUpload=false`       |
 | `auto`                          | `auto`                                | `boolean`                                                        | `false`                         | Upload automatically on file selection                               |
 | `customUpload`                  | `custom-upload`                       | `boolean`                                                        | `false`                         | Skip XHR and emit `uploadHandlerEvent` for manual handling           |
@@ -3466,7 +3629,9 @@ File upload with drag-and-drop, validation, progress tracking, and custom upload
 | `beforeSendEvent`     | `{ xhr: XMLHttpRequest, formData: FormData }`        | Just before XHR is sent                                   |
 | `beforeDropEvent`     | `DragEvent`                                          | Before dropped files are processed                        |
 | `uploadHandlerEvent`  | `{ files: File[] }`                                  | Emitted when `customUpload=true` — handle upload manually |
-| `validationFailEvent` | `{ file: File }`                                     | File exceeded `maxFileSize`; component does not show a message |
+| `validationFailEvent` | `{ file: File, reason?: 'size'\|'type'\|'count' }`   | File failed validation: too large (`size`), doesn't match `accept` (`type`), or queue full per `maxFiles` (`count`); component does not show a message |
+| `fileProgressEvent`   | `{ file: File, progress: number }`                   | Per-file upload progress (estimated for non-chunked uploads, exact for chunked) |
+| `retryEvent`          | `{ files: File[], attempt: number, maxAttempts: number }` | Emitted before each automatic retry attempt (when `retryCount > 0`) |
 
 **Public methods:**
 
@@ -3590,7 +3755,7 @@ No events or public methods.
 
 | Prop          | Type                   | Default    | Description                                                                                   |
 | ------------- | ---------------------- | ---------- | --------------------------------------------------------------------------------------------- |
-| `target`      | `'window' \| 'parent'` | `'window'` | Element that triggers scroll detection. `'parent'` listens on the nearest scrollable ancestor |
+| `target`      | `'window' \| 'parent'` | `'window'` | Element that triggers scroll detection. `'parent'` listens on the nearest scrollable ancestor — **known limitation, see below** |
 | `threshold`   | `number`               | `400`      | Scroll position in px at which the button becomes visible                                     |
 | `behavior`    | `'smooth' \| 'auto'`   | `'smooth'` | Scroll behavior when the button is clicked                                                    |
 | `icon`        | `string`               | —          | URL of a custom icon image. When omitted the built-in upward-arrow SVG is used                |
@@ -3605,19 +3770,11 @@ No events or public methods.
 
 `scoped: true` (Stencil scoped encapsulation — **not** shadow DOM; external CSS can still target the component via attribute selectors). The button is fixed-positioned with responsive sizing (3rem desktop → 2.25rem mobile).
 
-```html
-<!-- Vanilla — default behaviour -->
-<ms-scroll-top></ms-scroll-top>
+> **Known limitation — `target="parent"` doesn't currently work.** Confirmed in real usage (not just a Storybook artifact): the button never becomes visible/active when scrolling a bounded container. Use `target="window"` (the default) until this is fixed — don't rely on the example that used to be here.
 
-<!-- Vanilla — scroll inside a container -->
-<div style="height:400px; overflow-y:auto">
-  <ms-scroll-top
-    target="parent"
-    threshold="200"
-    behavior="auto"
-  ></ms-scroll-top>
-  <!-- long content -->
-</div>
+```html
+<!-- Vanilla — default behaviour (target="window", the only currently-working mode) -->
+<ms-scroll-top></ms-scroll-top>
 ```
 
 ```tsx
@@ -4070,3 +4227,1426 @@ Each component has its own `.stories.tsx` file with variants, props and behavior
 - Other (4): `ms-text-editor`, `ms-popover`, `ms-menubar`, `ms-fieldset`
 - Feedback (4): `ms-progress-bar`, `ms-timeline`, `ms-tooltip`, `ms-meter-group`
 - Utilities (5): `ms-paginator`, `ms-preload`, `ms-web-card`, `ms-file-upload`, `ms-scroll-top`
+
+## Forms
+
+### `ms-checkbox`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property          | Attribute          | Description                                                                                        | Type      | Default                    |
+| ----------------- | ------------------ | -------------------------------------------------------------------------------------------------- | --------- | -------------------------- |
+| `checked`         | `checked`          | Checked - to manipulate checkbox from outside                                                      | `boolean` | `false`                    |
+| `class`           | `class`            | Custom class                                                                                       | `string`  | `undefined`                |
+| `disabled`        | `disabled`         | Disabled                                                                                           | `boolean` | `undefined`                |
+| `errorMessage`    | `error-message`    | Error message shown when invalid is set                                                            | `string`  | `null`                     |
+| `inputId`         | `input-id`         | Input Id                                                                                           | `string`  | `undefined`                |
+| `invalid`         | `invalid`          | Invalid state, from outside                                                                        | `boolean` | `false`                    |
+| `label`           | `label`            | Label                                                                                              | `string`  | `undefined`                |
+| `name`            | `name`             | Name                                                                                               | `string`  | `undefined`                |
+| `readonly`        | `readonly`         | Readonly - the checkbox is focusable and submitted with the form but cannot be toggled by the user | `boolean` | `false`                    |
+| `required`        | `required`         | Required                                                                                           | `boolean` | `false`                    |
+| `requiredMessage` | `required-message` | Message shown when required and unchecked                                                          | `string`  | `DEFAULT_REQUIRED_MESSAGE` |
+| `value`           | `value`            | Value                                                                                              | `string`  | `undefined`                |
+
+
+## Events
+
+| Event              | Description | Type                            |
+| ------------------ | ----------- | ------------------------------- |
+| `checkboxChange`   | On Change   | `CustomEvent<boolean>`          |
+| `validationChange` |             | `CustomEvent<ValidationDetail>` |
+<!-- mwc:auto:end -->
+
+---
+
+### `ms-control-number`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property       | Attribute       | Description | Type               | Default     |
+| -------------- | --------------- | ----------- | ------------------ | ----------- |
+| `customClass`  | `custom-class`  |             | `string`           | `undefined` |
+| `defaultValue` | `default-value` |             | `number \| string` | `undefined` |
+| `disabled`     | `disabled`      |             | `boolean`          | `false`     |
+| `error`        | `error`         |             | `boolean`          | `false`     |
+| `errorMessage` | `error-message` |             | `string`           | `null`      |
+| `label`        | `label`         |             | `string`           | `''`        |
+| `max`          | `max`           |             | `number \| string` | `undefined` |
+| `min`          | `min`           |             | `number \| string` | `undefined` |
+| `value`        | `value`         |             | `number \| string` | `undefined` |
+
+
+## Events
+
+| Event         | Description | Type                  |
+| ------------- | ----------- | --------------------- |
+| `changeEvent` |             | `CustomEvent<number>` |
+| `inputEvent`  |             | `CustomEvent<number>` |
+<!-- mwc:auto:end -->
+
+---
+
+### `ms-input-field`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property          | Attribute          | Description | Type      | Default                    |
+| ----------------- | ------------------ | ----------- | --------- | -------------------------- |
+| `class`           | `class`            |             | `string`  | `null`                     |
+| `disabled`        | `disabled`         |             | `boolean` | `null`                     |
+| `errorMessage`    | `error-message`    |             | `string`  | `null`                     |
+| `idComponent`     | `id-component`     |             | `string`  | `'ms-input-field'`         |
+| `invalid`         | `invalid`          |             | `boolean` | `false`                    |
+| `label`           | `label`            |             | `string`  | `null`                     |
+| `maxLength`       | `max-length`       |             | `number`  | `null`                     |
+| `name`            | `name`             |             | `string`  | `null`                     |
+| `placeholder`     | `placeholder`      |             | `string`  | `null`                     |
+| `readonly`        | `readonly`         |             | `boolean` | `false`                    |
+| `required`        | `required`         |             | `boolean` | `false`                    |
+| `requiredMessage` | `required-message` |             | `string`  | `DEFAULT_REQUIRED_MESSAGE` |
+| `value`           | `value`            |             | `any`     | `null`                     |
+
+
+## Events
+
+| Event              | Description | Type                            |
+| ------------------ | ----------- | ------------------------------- |
+| `blurEvent`        |             | `CustomEvent<string>`           |
+| `changeEvent`      |             | `CustomEvent<string>`           |
+| `clickEvent`       |             | `CustomEvent<string>`           |
+| `focusEvent`       |             | `CustomEvent<string>`           |
+| `inputEvent`       |             | `CustomEvent<string>`           |
+| `keyDownEvent`     |             | `CustomEvent<KeyDownDetail>`    |
+| `validationChange` |             | `CustomEvent<ValidationDetail>` |
+<!-- mwc:auto:end -->
+
+---
+
+### `ms-input-group`
+
+<!-- mwc:auto:start -->
+## Overview
+
+Groups inputs with addons and propagates disabled/invalid to its ms-* form children.
+Layout styles live in global.css (.ms-input-group / .ms-input-group-addon), so raw
+<div class="ms-input-group"> markup keeps working; this component adds group-level
+state propagation on top.
+
+## Properties
+
+| Property   | Attribute  | Description                                                                                          | Type      | Default     |
+| ---------- | ---------- | ---------------------------------------------------------------------------------------------------- | --------- | ----------- |
+| `disabled` | `disabled` | When set, propagated to all known ms-* form children. Leave unset to control children individually.  | `boolean` | `undefined` |
+| `invalid`  | `invalid`  | When set, propagated to children that support invalid. Leave unset to control children individually. | `boolean` | `undefined` |
+<!-- mwc:auto:end -->
+
+---
+
+### `ms-input-number`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property            | Attribute             | Description | Type                     | Default                    |
+| ------------------- | --------------------- | ----------- | ------------------------ | -------------------------- |
+| `class`             | `class`               |             | `string`                 | `undefined`                |
+| `currency`          | `currency`            |             | `string`                 | `'USD'`                    |
+| `disabled`          | `disabled`            |             | `boolean`                | `false`                    |
+| `errorMessage`      | `error-message`       |             | `string`                 | `null`                     |
+| `idComponent`       | `id-component`        |             | `string`                 | `'ms-input-number'`        |
+| `invalid`           | `invalid`             |             | `boolean`                | `false`                    |
+| `label`             | `label`               |             | `string`                 | `null`                     |
+| `locale`            | `locale`              |             | `string`                 | `'en-US'`                  |
+| `max`               | `max`                 |             | `number`                 | `undefined`                |
+| `maxFractionDigits` | `max-fraction-digits` |             | `number`                 | `2`                        |
+| `maxLength`         | `max-length`          |             | `number`                 | `20`                       |
+| `min`               | `min`                 |             | `number`                 | `undefined`                |
+| `minFractionDigits` | `min-fraction-digits` |             | `number`                 | `0`                        |
+| `mode`              | `mode`                |             | `"currency" \| "number"` | `undefined`                |
+| `name`              | `name`                |             | `string`                 | `null`                     |
+| `placeholder`       | `placeholder`         |             | `string`                 | `undefined`                |
+| `prefixInput`       | `prefix-input`        |             | `string`                 | `undefined`                |
+| `readonly`          | `readonly`            |             | `boolean`                | `false`                    |
+| `required`          | `required`            |             | `boolean`                | `false`                    |
+| `requiredMessage`   | `required-message`    |             | `string`                 | `DEFAULT_REQUIRED_MESSAGE` |
+| `showControls`      | `show-controls`       |             | `boolean`                | `false`                    |
+| `suffix`            | `suffix`              |             | `string`                 | `undefined`                |
+| `useGrouping`       | `use-grouping`        |             | `boolean`                | `true`                     |
+| `value`             | `value`               |             | `number`                 | `undefined`                |
+
+
+## Events
+
+| Event              | Description | Type                            |
+| ------------------ | ----------- | ------------------------------- |
+| `blurEvent`        |             | `CustomEvent<number>`           |
+| `changeEvent`      |             | `CustomEvent<number>`           |
+| `clickEvent`       |             | `CustomEvent<number>`           |
+| `focusEvent`       |             | `CustomEvent<number>`           |
+| `inputEvent`       |             | `CustomEvent<number>`           |
+| `validationChange` |             | `CustomEvent<ValidationDetail>` |
+<!-- mwc:auto:end -->
+
+---
+
+### `ms-input-otp`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property          | Attribute          | Description | Type                                | Default                    |
+| ----------------- | ------------------ | ----------- | ----------------------------------- | -------------------------- |
+| `autoFocus`       | `auto-focus`       |             | `boolean`                           | `false`                    |
+| `customClass`     | `custom-class`     |             | `string`                            | `''`                       |
+| `disabled`        | `disabled`         |             | `boolean`                           | `false`                    |
+| `errorMessage`    | `error-message`    |             | `string`                            | `null`                     |
+| `idComponent`     | `id-component`     |             | `string`                            | `'ms-input-otp'`           |
+| `invalid`         | `invalid`          |             | `boolean`                           | `false`                    |
+| `length`          | `length`           |             | `number`                            | `4`                        |
+| `name`            | `name`             |             | `string`                            | `null`                     |
+| `placeholder`     | `placeholder`      |             | `string`                            | `''`                       |
+| `readonly`        | `readonly`         |             | `boolean`                           | `false`                    |
+| `required`        | `required`         |             | `boolean`                           | `false`                    |
+| `requiredMessage` | `required-message` |             | `string`                            | `DEFAULT_REQUIRED_MESSAGE` |
+| `type`            | `type`             |             | `"numeric" \| "password" \| "text"` | `'text'`                   |
+| `value`           | `value`            |             | `any`                               | `null`                     |
+
+
+## Events
+
+| Event              | Description | Type                            |
+| ------------------ | ----------- | ------------------------------- |
+| `blurEvent`        |             | `CustomEvent<number>`           |
+| `completeEvent`    |             | `CustomEvent<string>`           |
+| `focusEvent`       |             | `CustomEvent<number>`           |
+| `inputEvent`       |             | `CustomEvent<string>`           |
+| `validationChange` |             | `CustomEvent<ValidationDetail>` |
+<!-- mwc:auto:end -->
+
+---
+
+### `ms-input-password`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property      | Attribute      | Description | Type               | Default                     |
+| ------------- | -------------- | ----------- | ------------------ | --------------------------- |
+| `completed`   | `completed`    |             | `boolean`          | `false`                     |
+| `disabled`    | `disabled`     |             | `boolean`          | `false`                     |
+| `feedback`    | `feedback`     |             | `boolean`          | `false`                     |
+| `invalid`     | `invalid`      |             | `boolean`          | `false`                     |
+| `label`       | `label`        |             | `string`           | `''`                        |
+| `mediumLabel` | `medium-label` |             | `string`           | `'Medium'`                  |
+| `mediumRegex` | `medium-regex` |             | `RegExp \| string` | `undefined`                 |
+| `placeholder` | `placeholder`  |             | `string`           | `''`                        |
+| `promptLabel` | `prompt-label` |             | `string`           | `'Please enter a password'` |
+| `strongLabel` | `strong-label` |             | `string`           | `'Strong'`                  |
+| `strongRegex` | `strong-regex` |             | `RegExp \| string` | `undefined`                 |
+| `toggleMask`  | `toggle-mask`  |             | `boolean`          | `false`                     |
+| `value`       | `value`        |             | `string`           | `''`                        |
+| `weakLabel`   | `weak-label`   |             | `string`           | `'Weak'`                    |
+
+
+## Events
+
+| Event            | Description | Type                              |
+| ---------------- | ----------- | --------------------------------- |
+| `passwordChange` |             | `CustomEvent<{ value: string; }>` |
+<!-- mwc:auto:end -->
+
+---
+
+### `ms-input-switch`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property          | Attribute          | Description                                                                        | Type             | Default     |
+| ----------------- | ------------------ | ---------------------------------------------------------------------------------- | ---------------- | ----------- |
+| `checked`         | `checked`          | Checked, to manipulate checkbox from outside                                       | `boolean`        | `false`     |
+| `class`           | `class`            | Custom class                                                                       | `string`         | `undefined` |
+| `disabled`        | `disabled`         | Disabled                                                                           | `boolean`        | `undefined` |
+| `name`            | `name`             | Name of the native input, for form submission                                      | `string`         | `undefined` |
+| `readonly`        | `readonly`         | Readonly - the switch is submitted with the form but cannot be toggled by the user | `boolean`        | `false`     |
+| `tooltip`         | `tooltip`          | Content for tooltip                                                                | `string`         | `undefined` |
+| `tooltipPosition` | `tooltip-position` | Tooltip Position                                                                   | `Position.Right` | `undefined` |
+| `value`           | `value`            | Value submitted when checked (native default is "on")                              | `string`         | `undefined` |
+
+
+## Events
+
+| Event         | Description | Type                   |
+| ------------- | ----------- | ---------------------- |
+| `changeEvent` |             | `CustomEvent<boolean>` |
+<!-- mwc:auto:end -->
+
+---
+
+### `ms-knob`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property        | Attribute        | Description | Type      | Default     |
+| --------------- | ---------------- | ----------- | --------- | ----------- |
+| `disabled`      | `disabled`       |             | `boolean` | `false`     |
+| `max`           | `max`            |             | `number`  | `100`       |
+| `min`           | `min`            |             | `number`  | `0`         |
+| `rangeColor`    | `range-color`    |             | `string`  | `undefined` |
+| `readOnly`      | `read-only`      |             | `boolean` | `false`     |
+| `size`          | `size`           |             | `number`  | `100`       |
+| `step`          | `step`           |             | `number`  | `1`         |
+| `strokeWidth`   | `stroke-width`   |             | `number`  | `14`        |
+| `textColor`     | `text-color`     |             | `string`  | `undefined` |
+| `value`         | `value`          |             | `number`  | `0`         |
+| `valueColor`    | `value-color`    |             | `string`  | `undefined` |
+| `valueTemplate` | `value-template` |             | `string`  | `'{value}'` |
+
+
+## Events
+
+| Event         | Description | Type                  |
+| ------------- | ----------- | --------------------- |
+| `changeValue` |             | `CustomEvent<number>` |
+<!-- mwc:auto:end -->
+
+---
+
+### `ms-radio`
+
+<!-- mwc:auto:start -->
+## Overview
+
+Required validation is computed per radio (invalid while this radio is unchecked).
+Group-level "one of N checked" validation across radios sharing the same name is not
+computed by the component; the native required attribute forwarded to the input does
+provide browser-level group semantics inside a real <form>.
+
+## Properties
+
+| Property          | Attribute          | Description | Type      | Default                    |
+| ----------------- | ------------------ | ----------- | --------- | -------------------------- |
+| `checked`         | `checked`          |             | `boolean` | `undefined`                |
+| `class`           | `class`            |             | `string`  | `undefined`                |
+| `disabled`        | `disabled`         |             | `boolean` | `undefined`                |
+| `errorMessage`    | `error-message`    |             | `string`  | `null`                     |
+| `idRadio`         | `id-radio`         |             | `string`  | `undefined`                |
+| `invalid`         | `invalid`          |             | `boolean` | `false`                    |
+| `isChecked`       | `is-checked`       |             | `boolean` | `undefined`                |
+| `label`           | `label`            |             | `string`  | `undefined`                |
+| `name`            | `name`             |             | `string`  | `undefined`                |
+| `readonly`        | `readonly`         |             | `boolean` | `false`                    |
+| `required`        | `required`         |             | `boolean` | `false`                    |
+| `requiredMessage` | `required-message` |             | `string`  | `DEFAULT_REQUIRED_MESSAGE` |
+| `value`           | `value`            |             | `string`  | `undefined`                |
+
+
+## Events
+
+| Event              | Description | Type                            |
+| ------------------ | ----------- | ------------------------------- |
+| `radioChange`      |             | `CustomEvent<any>`              |
+| `validationChange` |             | `CustomEvent<ValidationDetail>` |
+<!-- mwc:auto:end -->
+
+---
+
+## Selection
+
+### `ms-autocomplete`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property          | Attribute          | Description | Type                                  | Default                    |
+| ----------------- | ------------------ | ----------- | ------------------------------------- | -------------------------- |
+| `class`           | `class`            |             | `string`                              | `null`                     |
+| `debounceTime`    | `debounce-time`    |             | `number`                              | `300`                      |
+| `disabled`        | `disabled`         |             | `boolean`                             | `false`                    |
+| `errorMessage`    | `error-message`    |             | `string`                              | `null`                     |
+| `idComponent`     | `id-component`     |             | `string`                              | `'ms-autocomplete'`        |
+| `invalid`         | `invalid`          |             | `boolean`                             | `false`                    |
+| `label`           | `label`            |             | `string`                              | `null`                     |
+| `optionGroup`     | `option-group`     |             | `boolean`                             | `false`                    |
+| `placeholder`     | `placeholder`      |             | `string`                              | `'Type to search...'`      |
+| `required`        | `required`         |             | `boolean`                             | `false`                    |
+| `requiredMessage` | `required-message` |             | `string`                              | `DEFAULT_REQUIRED_MESSAGE` |
+| `showIcon`        | `show-icon`        |             | `boolean`                             | `false`                    |
+| `suggestions`     | --                 |             | `{ label: string; value: string; }[]` | `[]`                       |
+| `value`           | `value`            |             | `number \| string`                    | `null`                     |
+
+
+## Events
+
+| Event              | Description | Type                                                                                               |
+| ------------------ | ----------- | -------------------------------------------------------------------------------------------------- |
+| `completeMethod`   |             | `CustomEvent<{ query: string; resolve: (results: { label: string; value: string; }[]) => void; }>` |
+| `selected`         |             | `CustomEvent<{ label: string; value: string; }>`                                                   |
+| `validationChange` |             | `CustomEvent<ValidationDetail>`                                                                    |
+<!-- mwc:auto:end -->
+
+---
+
+### `ms-chips`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property      | Attribute     | Description | Type                                   | Default             |
+| ------------- | ------------- | ----------- | -------------------------------------- | ------------------- |
+| `class`       | `class`       |             | `string`                               | `undefined`         |
+| `disabled`    | `disabled`    |             | `boolean`                              | `false`             |
+| `invalid`     | `invalid`     |             | `boolean`                              | `false`             |
+| `max`         | `max`         |             | `number`                               | `undefined`         |
+| `placeholder` | `placeholder` |             | `string`                               | `undefined`         |
+| `removable`   | `removable`   |             | `boolean`                              | `true`              |
+| `separator`   | `separator`   |             | `Separator.Comma \| Separator.Default` | `Separator.Default` |
+| `suggestions` | --            |             | `string[]`                             | `undefined`         |
+| `value`       | --            |             | `string[]`                             | `undefined`         |
+| `variant`     | `variant`     |             | `Variant.Filled \| Variant.Outlined`   | `Variant.Outlined`  |
+
+
+## Events
+
+| Event         | Description | Type                    |
+| ------------- | ----------- | ----------------------- |
+| `changeEvent` |             | `CustomEvent<string[]>` |
+<!-- mwc:auto:end -->
+
+---
+
+### `ms-dropdown`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property          | Attribute          | Description | Type                    | Default                    |
+| ----------------- | ------------------ | ----------- | ----------------------- | -------------------------- |
+| `class`           | `class`            |             | `string`                | `null`                     |
+| `disabled`        | `disabled`         |             | `boolean`               | `false`                    |
+| `errorMessage`    | `error-message`    |             | `string`                | `null`                     |
+| `filter`          | `filter`           |             | `boolean`               | `false`                    |
+| `idComponent`     | `id-component`     |             | `string`                | `'ms-dropdown'`            |
+| `invalid`         | `invalid`          |             | `boolean`               | `false`                    |
+| `label`           | `label`            |             | `string`                | `null`                     |
+| `optionGroup`     | `option-group`     |             | `boolean`               | `false`                    |
+| `options`         | --                 |             | `GroupItem[] \| Item[]` | `[]`                       |
+| `placeholder`     | `placeholder`      |             | `string`                | `'Select option'`          |
+| `required`        | `required`         |             | `boolean`               | `false`                    |
+| `requiredMessage` | `required-message` |             | `string`                | `DEFAULT_REQUIRED_MESSAGE` |
+| `value`           | `value`            |             | `number \| string`      | `null`                     |
+
+
+## Events
+
+| Event              | Description | Type                            |
+| ------------------ | ----------- | ------------------------------- |
+| `selected`         |             | `CustomEvent<string>`           |
+| `validationChange` |             | `CustomEvent<ValidationDetail>` |
+<!-- mwc:auto:end -->
+
+---
+
+### `ms-multiselect`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property              | Attribute                | Description | Type                    | Default                    |
+| --------------------- | ------------------------ | ----------- | ----------------------- | -------------------------- |
+| `class`               | `class`                  |             | `string`                | `null`                     |
+| `debounceTime`        | `debounce-time`          |             | `number`                | `300`                      |
+| `disabled`            | `disabled`               |             | `boolean`               | `false`                    |
+| `display`             | `display`                |             | `string`                | `'comma'`                  |
+| `errorMessage`        | `error-message`          |             | `string`                | `null`                     |
+| `idComponent`         | `id-component`           |             | `string`                | `'ms-multiselect'`         |
+| `invalid`             | `invalid`                |             | `boolean`               | `false`                    |
+| `label`               | `label`                  |             | `string`                | `null`                     |
+| `loading`             | `loading`                |             | `boolean`               | `false`                    |
+| `optionGroup`         | `option-group`           |             | `boolean`               | `false`                    |
+| `options`             | --                       |             | `GroupItem[] \| Item[]` | `[]`                       |
+| `placeholder`         | `placeholder`            |             | `string`                | `'Select an item'`         |
+| `remoteFilter`        | `remote-filter`          |             | `boolean`               | `false`                    |
+| `required`            | `required`               |             | `boolean`               | `false`                    |
+| `requiredMessage`     | `required-message`       |             | `string`                | `DEFAULT_REQUIRED_MESSAGE` |
+| `selectAllOptionText` | `select-all-option-text` |             | `string`                | `''`                       |
+| `showFilter`          | `show-filter`            |             | `boolean`               | `false`                    |
+| `showSelectAll`       | `show-select-all`        |             | `boolean`               | `true`                     |
+| `value`               | --                       |             | `GroupItem[] \| Item[]` | `undefined`                |
+
+
+## Events
+
+| Event              | Description | Type                            |
+| ------------------ | ----------- | ------------------------------- |
+| `filter`           |             | `CustomEvent<string>`           |
+| `hide`             |             | `CustomEvent<boolean>`          |
+| `selectAll`        |             | `CustomEvent<any>`              |
+| `selected`         |             | `CustomEvent<string>`           |
+| `validationChange` |             | `CustomEvent<ValidationDetail>` |
+<!-- mwc:auto:end -->
+
+---
+
+### `ms-select-button`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property          | Attribute          | Description | Type                                                                 | Default                    |
+| ----------------- | ------------------ | ----------- | -------------------------------------------------------------------- | -------------------------- |
+| `class`           | `class`            |             | `string`                                                             | `null`                     |
+| `disabled`        | `disabled`         |             | `boolean`                                                            | `false`                    |
+| `errorMessage`    | `error-message`    |             | `string`                                                             | `null`                     |
+| `idComponent`     | `id-component`     |             | `string`                                                             | `'ms-select-button'`       |
+| `invalid`         | `invalid`          |             | `boolean`                                                            | `false`                    |
+| `label`           | `label`            |             | `string`                                                             | `null`                     |
+| `multiple`        | `multiple`         |             | `boolean`                                                            | `false`                    |
+| `options`         | --                 |             | `Item[] \| string[]`                                                 | `[]`                       |
+| `required`        | `required`         |             | `boolean`                                                            | `false`                    |
+| `requiredMessage` | `required-message` |             | `string`                                                             | `DEFAULT_REQUIRED_MESSAGE` |
+| `tooltip`         | `tooltip`          |             | `string`                                                             | `null`                     |
+| `tooltipPosition` | `tooltip-position` |             | `Position.Bottom \| Position.Left \| Position.Right \| Position.Top` | `Position.Top`             |
+| `value`           | `value`            |             | `any`                                                                | `null`                     |
+
+
+## Events
+
+| Event              | Description | Type                            |
+| ------------------ | ----------- | ------------------------------- |
+| `changeValue`      |             | `CustomEvent<any>`              |
+| `validationChange` |             | `CustomEvent<ValidationDetail>` |
+<!-- mwc:auto:end -->
+
+---
+
+## Navigation and layout
+
+### `ms-accordion`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property       | Attribute       | Description | Type                 | Default |
+| -------------- | --------------- | ----------- | -------------------- | ------- |
+| `activeIndex`  | `active-index`  |             | `number \| number[]` | `-1`    |
+| `contentClass` | `content-class` |             | `string`             | `''`    |
+| `disabled`     | --              |             | `number[]`           | `[]`    |
+| `headerClass`  | `header-class`  |             | `string`             | `''`    |
+| `multiple`     | `multiple`      |             | `boolean`            | `false` |
+
+
+## Events
+
+| Event       | Description | Type                                                                        |
+| ----------- | ----------- | --------------------------------------------------------------------------- |
+| `tabChange` |             | `CustomEvent<{ index: number; isOpen: boolean; activeIndexes: number[]; }>` |
+| `tabClose`  |             | `CustomEvent<{ index: number; activeIndexes: number[]; }>`                  |
+| `tabOpen`   |             | `CustomEvent<{ index: number; activeIndexes: number[]; }>`                  |
+<!-- mwc:auto:end -->
+
+---
+
+### `ms-breadcrumb`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property        | Attribute        | Description | Type                                                                                                                                                                                                                                                                                                                                                                                                          | Default                  |
+| --------------- | ---------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| `customClass`   | `custom-class`   |             | `string`                                                                                                                                                                                                                                                                                                                                                                                                      | `''`                     |
+| `home`          | --               |             | `BreadcrumbItem`                                                                                                                                                                                                                                                                                                                                                                                              | `null`                   |
+| `idPrefix`      | `id-prefix`      |             | `string`                                                                                                                                                                                                                                                                                                                                                                                                      | `'ms-breadcrumb'`        |
+| `model`         | --               |             | `BreadcrumbItem[]`                                                                                                                                                                                                                                                                                                                                                                                            | `[]`                     |
+| `separatorIcon` | `separator-icon` |             | `"info" \| "success" \| "alert" \| "close" \| "home" \| "breadcrumb-separator" \| "chevron-double-left" \| "chevron-left" \| "chevron-double-right" \| "chevron-right" \| "next" \| "previous" \| "close-circle" \| "search" \| "calendar" \| "increment" \| "decrement" \| "up-arrow" \| "down-arrow" \| "expanded-up" \| "expanded-down" \| "sort" \| "sort-up" \| "sort-down" \| "warning" \| "not-found"` | `'breadcrumb-separator'` |
+<!-- mwc:auto:end -->
+
+---
+
+### `ms-navbar`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property           | Attribute            | Description | Type                     | Default |
+| ------------------ | -------------------- | ----------- | ------------------------ | ------- |
+| `accordion`        | `accordion`          |             | `boolean`                | `true`  |
+| `activeItemId`     | `active-item-id`     |             | `string`                 | `''`    |
+| `customClass`      | `custom-class`       |             | `string`                 | `''`    |
+| `defaultCollapsed` | `default-collapsed`  |             | `boolean`                | `true`  |
+| `items`            | `items`              |             | `NavbarItem[] \| string` | `[]`    |
+| `showToggleButton` | `show-toggle-button` |             | `boolean`                | `false` |
+
+
+## Events
+
+| Event           | Description | Type                   |
+| --------------- | ----------- | ---------------------- |
+| `itemSelect`    |             | `CustomEvent<string>`  |
+| `sidebarToggle` |             | `CustomEvent<boolean>` |
+
+
+## Methods
+
+### `collapse() => Promise<void>`
+
+
+
+#### Returns
+
+Type: `Promise<void>`
+
+
+
+### `expand() => Promise<void>`
+
+
+
+#### Returns
+
+Type: `Promise<void>`
+
+
+
+### `toggle() => Promise<void>`
+
+
+
+#### Returns
+
+Type: `Promise<void>`
+<!-- mwc:auto:end -->
+
+---
+
+### `ms-sidebar`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property      | Attribute      | Description | Type                                     | Default     |
+| ------------- | -------------- | ----------- | ---------------------------------------- | ----------- |
+| `class`       | `class`        |             | `string`                                 | `undefined` |
+| `content`     | `content`      |             | `boolean`                                | `false`     |
+| `dismissible` | `dismissible`  |             | `boolean`                                | `true`      |
+| `fullScreen`  | `full-screen`  |             | `boolean`                                | `false`     |
+| `idComponent` | `id-component` |             | `string`                                 | `undefined` |
+| `position`    | `position`     |             | `"bottom" \| "left" \| "right" \| "top"` | `'left'`    |
+| `visible`     | `visible`      |             | `boolean`                                | `false`     |
+
+
+## Events
+
+| Event  | Description | Type                   |
+| ------ | ----------- | ---------------------- |
+| `hide` |             | `CustomEvent<boolean>` |
+<!-- mwc:auto:end -->
+
+---
+
+### `ms-steps`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property      | Attribute      | Description | Type         | Default     |
+| ------------- | -------------- | ----------- | ------------ | ----------- |
+| `activeIndex` | `active-index` |             | `number`     | `0`         |
+| `customClass` | `custom-class` |             | `string`     | `undefined` |
+| `readonly`    | `readonly`     |             | `boolean`    | `true`      |
+| `steps`       | --             |             | `StepItem[]` | `undefined` |
+
+
+## Events
+
+| Event        | Description | Type                  |
+| ------------ | ----------- | --------------------- |
+| `stepChange` |             | `CustomEvent<number>` |
+| `stepSelect` |             | `CustomEvent<any>`    |
+<!-- mwc:auto:end -->
+
+---
+
+### `ms-tabs`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property       | Attribute    | Description | Type                                                       | Default           |
+| -------------- | ------------ | ----------- | ---------------------------------------------------------- | ----------------- |
+| `activeTab`    | `active-tab` |             | `number`                                                   | `0`               |
+| `disabledTabs` | --           |             | `number[]`                                                 | `[]`              |
+| `hierarchy`    | `hierarchy`  |             | `Variant.Primary \| Variant.Secondary \| Variant.Tertiary` | `Variant.Primary` |
+
+
+## Events
+
+| Event       | Description | Type               |
+| ----------- | ----------- | ------------------ |
+| `tabChange` |             | `CustomEvent<any>` |
+<!-- mwc:auto:end -->
+
+---
+
+## Display and visualization
+
+### `ms-badge`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property   | Attribute  | Description                                           | Type                                      | Default      |
+| ---------- | ---------- | ----------------------------------------------------- | ----------------------------------------- | ------------ |
+| `class`    | `class`    | Style Class                                           | `string`                                  | `undefined`  |
+| `severity` | `severity` | Severity Type of Badge                                | `string`                                  | `undefined`  |
+| `size`     | `size`     | Size of the badge, valid options are large and xlarge | `Size.Large \| Size.Medium \| Size.Small` | `Size.Small` |
+| `value`    | `value`    | The first name                                        | `string`                                  | `undefined`  |
+<!-- mwc:auto:end -->
+
+---
+
+### `ms-icon`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property      | Attribute      | Description                               | Type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Default          |
+| ------------- | -------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| `color`       | `color`        | Color of the icon (default: currentColor) | `string`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | `'currentColor'` |
+| `customClass` | `custom-class` | Additional CSS class                      | `string`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | `undefined`      |
+| `name`        | `name`         | Name of the icon to display               | `"filter" \| "info" \| "copy" \| "menu" \| "download" \| "x" \| "home" \| "chevron-left" \| "chevron-right" \| "search" \| "calendar" \| "alert-circle" \| "alert-triangle" \| "arrow-left" \| "arrow-right" \| "bell" \| "check" \| "check-circle" \| "chevron-down" \| "chevron-up" \| "edit" \| "eye" \| "eye-off" \| "lock" \| "mail" \| "minus" \| "plus" \| "refresh" \| "settings" \| "trash" \| "unlock" \| "upload" \| "user" \| "nav-administration" \| "nav-agent" \| "nav-business-intelligence" \| "nav-callcenter-ai" \| "nav-compliance" \| "nav-customer" \| "nav-finance" \| "nav-home" \| "nav-operations" \| "nav-owner" \| "nav-product" \| "nav-sales" \| "nav-zeus-lab"` | `undefined`      |
+| `size`        | `size`         | Size of the icon in pixels (default: 24)  | `number \| string`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | `24`             |
+<!-- mwc:auto:end -->
+
+---
+
+### `ms-image`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property           | Attribute        | Description | Type               | Default     |
+| ------------------ | ---------------- | ----------- | ------------------ | ----------- |
+| `alt` _(required)_ | `alt`            |             | `string`           | `undefined` |
+| `height`           | `height`         |             | `number \| string` | `undefined` |
+| `indicatorIcon`    | `indicator-icon` |             | `string`           | `undefined` |
+| `preview`          | `preview`        |             | `boolean`          | `false`     |
+| `src` _(required)_ | `src`            |             | `string`           | `undefined` |
+| `width`            | `width`          |             | `number \| string` | `undefined` |
+| `zoomSrc`          | `zoom-src`       |             | `string`           | `undefined` |
+
+
+## Shadow Parts
+
+| Part               | Description |
+| ------------------ | ----------- |
+| `"image"`          |             |
+| `"indicator"`      |             |
+| `"indicator-icon"` |             |
+| `"modal-image"`    |             |
+<!-- mwc:auto:end -->
+
+---
+
+### `ms-message`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property      | Attribute      | Description | Type                                                          | Default  |
+| ------------- | -------------- | ----------- | ------------------------------------------------------------- | -------- |
+| `customClass` | `custom-class` |             | `string`                                                      | `''`     |
+| `noIcon`      | `no-icon`      |             | `boolean`                                                     | `false`  |
+| `variant`     | `variant`      |             | `"danger" \| "info" \| "secondary" \| "success" \| "warning"` | `'info'` |
+<!-- mwc:auto:end -->
+
+---
+
+### `ms-notification`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property      | Attribute      | Description | Type                                                                                                                                                     | Default             |
+| ------------- | -------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
+| `detail`      | `detail`       |             | `string`                                                                                                                                                 | `null`              |
+| `idComponent` | `id-component` |             | `string`                                                                                                                                                 | `undefined`         |
+| `life`        | `life`         |             | `number`                                                                                                                                                 | `3000`              |
+| `position`    | `position`     |             | `Position.BottomCenter \| Position.BottomLeft \| Position.BottomRight \| Position.Center \| Position.TopCenter \| Position.TopLeft \| Position.TopRight` | `Position.TopRight` |
+| `severity`    | `severity`     |             | `Severity.Alert \| Severity.Info \| Severity.Success \| Severity.Warning`                                                                                | `Severity.Info`     |
+| `summary`     | `summary`      |             | `string`                                                                                                                                                 | `null`              |
+| `visible`     | `visible`      |             | `boolean`                                                                                                                                                | `false`             |
+<!-- mwc:auto:end -->
+
+---
+
+### `ms-skeleton`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property       | Attribute       | Description | Type     | Default |
+| -------------- | --------------- | ----------- | -------- | ------- |
+| `borderRadius` | `border-radius` |             | `string` | `null`  |
+| `class`        | `class`         |             | `string` | `null`  |
+| `height`       | `height`        |             | `string` | `null`  |
+| `shape`        | `shape`         |             | `string` | `null`  |
+| `width`        | `width`         |             | `string` | `null`  |
+<!-- mwc:auto:end -->
+
+---
+
+### `ms-spinner`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property | Attribute | Description | Type     | Default     |
+| -------- | --------- | ----------- | -------- | ----------- |
+| `color`  | `color`   |             | `string` | `"#8CA2D4"` |
+| `height` | `height`  |             | `string` | `'2rem'`    |
+| `width`  | `width`   |             | `string` | `'2rem'`    |
+<!-- mwc:auto:end -->
+
+---
+
+## Interactive and complex
+
+### `ms-button`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property      | Attribute      | Description | Type      | Default                 |
+| ------------- | -------------- | ----------- | --------- | ----------------------- |
+| `class`       | `class`        |             | `string`  | `undefined`             |
+| `customClass` | `custom-class` |             | `string`  | `undefined`             |
+| `disabled`    | `disabled`     |             | `boolean` | `false`                 |
+| `icon`        | `icon`         |             | `string`  | `undefined`             |
+| `label`       | `label`        |             | `string`  | `undefined`             |
+| `loading`     | `loading`      |             | `boolean` | `undefined`             |
+| `size`        | `size`         |             | `string`  | `ButtonSize.medium`     |
+| `type`        | `type`         |             | `string`  | `ButtonType.button`     |
+| `variant`     | `variant`      |             | `string`  | `ButtonVariant.primary` |
+
+
+## Events
+
+| Event        | Description | Type                      |
+| ------------ | ----------- | ------------------------- |
+| `clickEvent` |             | `CustomEvent<MouseEvent>` |
+<!-- mwc:auto:end -->
+
+---
+
+### `ms-calendar`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property             | Attribute              | Description | Type                                          | Default                    |
+| -------------------- | ---------------------- | ----------- | --------------------------------------------- | -------------------------- |
+| `class`              | `class`                |             | `string`                                      | `null`                     |
+| `closeOnSelect`      | `close-on-select`      |             | `boolean`                                     | `false`                    |
+| `disabled`           | `disabled`             |             | `boolean`                                     | `false`                    |
+| `errorMessage`       | `error-message`        |             | `string`                                      | `null`                     |
+| `hourFormat`         | `hour-format`          |             | `"12" \| "24"`                                | `'24'`                     |
+| `idComponent`        | `id-component`         |             | `string`                                      | `'ms-calendar'`            |
+| `invalid`            | `invalid`              |             | `boolean`                                     | `false`                    |
+| `label`              | `label`                |             | `string`                                      | `null`                     |
+| `maxDate`            | --                     |             | `Date`                                        | `null`                     |
+| `minDate`            | --                     |             | `Date`                                        | `null`                     |
+| `placeholder`        | `placeholder`          |             | `string`                                      | `'Select a date'`          |
+| `required`           | `required`             |             | `boolean`                                     | `false`                    |
+| `requiredMessage`    | `required-message`     |             | `string`                                      | `DEFAULT_REQUIRED_MESSAGE` |
+| `selectionMode`      | `selection-mode`       |             | `SelectionMode.Range \| SelectionMode.Single` | `SelectionMode.Single`     |
+| `showAmPmControls`   | `show-am-pm-controls`  |             | `boolean`                                     | `true`                     |
+| `showHourControls`   | `show-hour-controls`   |             | `boolean`                                     | `true`                     |
+| `showIcon`           | `show-icon`            |             | `boolean`                                     | `false`                    |
+| `showMinuteControls` | `show-minute-controls` |             | `boolean`                                     | `true`                     |
+| `showTime`           | `show-time`            |             | `boolean`                                     | `false`                    |
+| `stepHour`           | `step-hour`            |             | `number`                                      | `1`                        |
+| `stepMinute`         | `step-minute`          |             | `number`                                      | `1`                        |
+| `value`              | `value`                |             | `number \| string \| string[]`                | `null`                     |
+
+
+## Events
+
+| Event              | Description | Type                            |
+| ------------------ | ----------- | ------------------------------- |
+| `update`           |             | `CustomEvent<any>`              |
+| `validationChange` |             | `CustomEvent<ValidationDetail>` |
+<!-- mwc:auto:end -->
+
+---
+
+### `ms-carousel`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property            | Attribute           | Description | Type                 | Default     |
+| ------------------- | ------------------- | ----------- | -------------------- | ----------- |
+| `autoplay`          | `autoplay`          |             | `boolean`            | `false`     |
+| `autoplayInterval`  | `autoplay-interval` |             | `number`             | `3000`      |
+| `customClass`       | `custom-class`      |             | `string`             | `''`        |
+| `dragThreshold`     | `drag-threshold`    |             | `number`             | `50`        |
+| `infinite`          | `infinite`          |             | `boolean`            | `false`     |
+| `numScroll`         | `num-scroll`        |             | `number`             | `1`         |
+| `numVisible`        | `num-visible`       |             | `number`             | `1`         |
+| `responsiveOptions` | --                  |             | `ResponsiveOption[]` | `undefined` |
+| `showIndicators`    | `show-indicators`   |             | `boolean`            | `true`      |
+| `showNavigators`    | `show-navigators`   |             | `boolean`            | `true`      |
+| `value`             | --                  |             | `any[]`              | `[]`        |
+<!-- mwc:auto:end -->
+
+---
+
+### `ms-cascade-menu`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property       | Attribute        | Description | Type                          | Default   |
+| -------------- | ---------------- | ----------- | ----------------------------- | --------- |
+| `activeItemId` | `active-item-id` |             | `string`                      | `''`      |
+| `customClass`  | `custom-class`   |             | `string`                      | `''`      |
+| `menuData`     | `menu-data`      |             | `CascadeMenuItem[] \| string` | `[]`      |
+| `minWidth`     | `min-width`      |             | `string`                      | `'220px'` |
+| `width`        | `width`          |             | `string`                      | `''`      |
+
+
+## Events
+
+| Event       | Description | Type                  |
+| ----------- | ----------- | --------------------- |
+| `itemClick` |             | `CustomEvent<string>` |
+<!-- mwc:auto:end -->
+
+---
+
+### `ms-chart`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property  | Attribute | Description                                                               | Type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Default                |
+| --------- | --------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
+| `class`   | `class`   | Custom CSS class                                                          | `string`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | `undefined`            |
+| `data`    | --        | Chart data object containing labels and datasets                          | `ChartData<keyof ChartTypeRegistry, (number \| Point \| [number, number] \| BubbleDataPoint)[], unknown>`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | `undefined`            |
+| `height`  | `height`  | Container height                                                          | `string`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | `'400px'`              |
+| `options` | --        | Chart.js configuration options                                            | `{ datasets?: _DeepPartialObject<{ line: LineControllerDatasetOptions & FillerControllerDatasetOptions; bar: BarControllerDatasetOptions; scatter: LineControllerDatasetOptions; bubble: BubbleControllerDatasetOptions; pie: DoughnutControllerDatasetOptions; doughnut: DoughnutControllerDatasetOptions; polarArea: PolarAreaControllerDatasetOptions; radar: RadarControllerDatasetOptions & FillerControllerDatasetOptions; }>; indexAxis?: "x" \| "y"; clip?: number \| false \| _DeepPartialObject<ChartArea>; color?: string \| _DeepPartialObject<CanvasGradient> \| _DeepPartialObject<CanvasPattern> \| ((ctx: ScriptableContext<keyof ChartTypeRegistry>, options: AnyObject) => Color); backgroundColor?: string \| _DeepPartialObject<CanvasGradient> \| _DeepPartialObject<CanvasPattern> \| readonly (string \| _DeepPartialObject<CanvasGradient> \| _DeepPartialObject<CanvasPattern>)[] \| ((ctx: ScriptableContext<keyof ChartTypeRegistry>, options: AnyObject) => Color); hoverBackgroundColor?: string \| _DeepPartialObject<CanvasGradient> \| _DeepPartialObject<CanvasPattern> \| readonly (string \| _DeepPartialObject<CanvasGradient> \| _DeepPartialObject<CanvasPattern>)[] \| ((ctx: ScriptableContext<keyof ChartTypeRegistry>, options: AnyObject) => Color); borderColor?: string \| _DeepPartialObject<CanvasGradient> \| _DeepPartialObject<CanvasPattern> \| readonly (string \| _DeepPartialObject<CanvasGradient> \| _DeepPartialObject<CanvasPattern>)[] \| ((ctx: ScriptableContext<keyof ChartTypeRegistry>, options: AnyObject) => Color); hoverBorderColor?: string \| _DeepPartialObject<CanvasGradient> \| _DeepPartialObject<CanvasPattern> \| readonly (string \| _DeepPartialObject<CanvasGradient> \| _DeepPartialObject<CanvasPattern>)[] \| ((ctx: ScriptableContext<keyof ChartTypeRegistry>, options: AnyObject) => Color); font?: _DeepPartialObject<Partial<FontSpec>>; responsive?: boolean; maintainAspectRatio?: boolean; resizeDelay?: number; aspectRatio?: number; locale?: string; onResize?: (chart: Chart<keyof ChartTypeRegistry, (number \| Point \| [number, number] \| BubbleDataPoint)[], unknown>, size: { width: number; height: number; }) => void; devicePixelRatio?: number; interaction?: _DeepPartialObject<CoreInteractionOptions>; hover?: _DeepPartialObject<CoreInteractionOptions>; events?: _DeepPartialArray<keyof HTMLElementEventMap>; onHover?: (event: ChartEvent, elements: ActiveElement[], chart: Chart<keyof ChartTypeRegistry, (number \| Point \| [number, number] \| BubbleDataPoint)[], unknown>) => void; onClick?: (event: ChartEvent, elements: ActiveElement[], chart: Chart<keyof ChartTypeRegistry, (number \| Point \| [number, number] \| BubbleDataPoint)[], unknown>) => void; layout?: _DeepPartialObject<Partial<{ autoPadding: boolean; padding: Scriptable<Padding, ScriptableContext<keyof ChartTypeRegistry>>; }>>; parsing?: false \| _DeepPartialObject<{ [key: string]: string; }>; normalized?: boolean; animation?: false \| _DeepPartialObject<AnimationSpec<keyof ChartTypeRegistry> & { onProgress?: (this: Chart<keyof ChartTypeRegistry, (number \| Point \| [number, number] \| BubbleDataPoint)[], unknown>, event: AnimationEvent) => void; onComplete?: (this: Chart<keyof ChartTypeRegistry, (number \| Point \| [number, number] \| BubbleDataPoint)[], unknown>, event: AnimationEvent) => void; }>; animations?: _DeepPartialObject<AnimationsSpec<keyof ChartTypeRegistry>>; transitions?: _DeepPartialObject<TransitionsSpec<keyof ChartTypeRegistry>>; elements?: _DeepPartialObject<ElementOptionsByType<keyof ChartTypeRegistry>>; plugins?: _DeepPartialObject<PluginOptionsByType<keyof ChartTypeRegistry>>; line?: _DeepPartialObject<{ datasets: LineControllerDatasetOptions & FillerControllerDatasetOptions; }>; bar?: _DeepPartialObject<{ datasets: BarControllerDatasetOptions; }>; scatter?: _DeepPartialObject<{ datasets: LineControllerDatasetOptions; }>; bubble?: _DeepPartialObject<{ datasets: BubbleControllerDatasetOptions; }>; pie?: _DeepPartialObject<{ datasets: DoughnutControllerDatasetOptions; }>; doughnut?: _DeepPartialObject<{ datasets: DoughnutControllerDatasetOptions; }>; polarArea?: _DeepPartialObject<{ datasets: PolarAreaControllerDatasetOptions; }>; radar?: _DeepPartialObject<{ datasets: RadarControllerDatasetOptions & FillerControllerDatasetOptions; }>; scales?: _DeepPartialObject<{ [key: string]: ScaleOptionsByType<"radialLinear" \| keyof CartesianScaleTypeRegistry>; }>; }` | `{}`                   |
+| `type`    | `type`    | Chart type (line, bar, pie, doughnut, radar, polarArea, bubble, scatter)  | `"bar" \| "bubble" \| "doughnut" \| "line" \| "pie" \| "polarArea" \| "radar" \| "scatter"`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | `'bar'`                |
+| `variant` | `variant` | Color variant (primary, secondary, success, warning, danger, info, mixed) | `string`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | `ChartVariant.primary` |
+| `width`   | `width`   | Container width                                                           | `string`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | `'100%'`               |
+
+
+## Events
+
+| Event        | Description                             | Type                           |
+| ------------ | --------------------------------------- | ------------------------------ |
+| `chartClick` | Emitted when a chart element is clicked | `CustomEvent<ChartClickEvent>` |
+| `chartReady` | Emitted when the chart is ready         | `CustomEvent<any>`             |
+<!-- mwc:auto:end -->
+
+---
+
+### `ms-dialog`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property         | Attribute         | Description | Type                                                                                                                                                                            | Default           |
+| ---------------- | ----------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| `class`          | `class`           |             | `string`                                                                                                                                                                        | `null`            |
+| `closable`       | `closable`        |             | `boolean`                                                                                                                                                                       | `true`            |
+| `footer`         | `footer`          |             | `any`                                                                                                                                                                           | `undefined`       |
+| `header`         | `header`          |             | `any`                                                                                                                                                                           | `undefined`       |
+| `idComponent`    | `id-component`    |             | `string`                                                                                                                                                                        | `undefined`       |
+| `position`       | `position`        |             | `Position.Bottom \| Position.BottomLeft \| Position.BottomRight \| Position.Center \| Position.Left \| Position.Right \| Position.Top \| Position.TopLeft \| Position.TopRight` | `Position.Center` |
+| `showFooter`     | `show-footer`     |             | `boolean`                                                                                                                                                                       | `false`           |
+| `styleComponent` | `style-component` |             | `string`                                                                                                                                                                        | `undefined`       |
+| `visible`        | `visible`         |             | `boolean`                                                                                                                                                                       | `false`           |
+| `zIndex`         | `z-index`         |             | `string`                                                                                                                                                                        | `'9000'`          |
+
+
+## Events
+
+| Event  | Description | Type                   |
+| ------ | ----------- | ---------------------- |
+| `hide` |             | `CustomEvent<boolean>` |
+<!-- mwc:auto:end -->
+
+---
+
+### `ms-inplace`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property      | Attribute      | Description                                        | Type      | Default |
+| ------------- | -------------- | -------------------------------------------------- | --------- | ------- |
+| `active`      | `active`       | Muestra el contenido editable en lugar del display | `boolean` | `false` |
+| `closable`    | `closable`     | Agrega botón de cierre para volver al modo display | `boolean` | `false` |
+| `customClass` | `custom-class` | Clase personalizada aplicada al contenedor         | `string`  | `''`    |
+| `disabled`    | `disabled`     | Deshabilita la apertura del componente             | `boolean` | `false` |
+
+
+## Events
+
+| Event      | Description                                       | Type                   |
+| ---------- | ------------------------------------------------- | ---------------------- |
+| `msClose`  | Se emite al cerrar y volver al display            | `CustomEvent<void>`    |
+| `msOpen`   | Se emite al abrir el contenido                    | `CustomEvent<void>`    |
+| `msToggle` | Se emite al cambiar de estado, con el nuevo valor | `CustomEvent<boolean>` |
+<!-- mwc:auto:end -->
+
+---
+
+### `ms-menubar`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property           | Attribute             | Description | Type                      | Default |
+| ------------------ | --------------------- | ----------- | ------------------------- | ------- |
+| `cascadeMenuClass` | `cascade-menu-class`  |             | `string`                  | `''`    |
+| `customClass`      | `custom-class`        |             | `string`                  | `''`    |
+| `items`            | `items`               |             | `MenubarItem[] \| string` | `[]`    |
+| `menuActiveItemId` | `menu-active-item-id` |             | `string`                  | `''`    |
+<!-- mwc:auto:end -->
+
+---
+
+### `ms-popover`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property        | Attribute         | Description | Type                                                                     | Default            |
+| --------------- | ----------------- | ----------- | ------------------------------------------------------------------------ | ------------------ |
+| `closeOnEscape` | `close-on-escape` |             | `boolean`                                                                | `true`             |
+| `customClass`   | `custom-class`    |             | `string`                                                                 | `''`               |
+| `dismissable`   | `dismissable`     |             | `boolean`                                                                | `true`             |
+| `placement`     | `placement`       |             | `Placement.Bottom \| Placement.Left \| Placement.Right \| Placement.Top` | `Placement.Bottom` |
+| `showCloseIcon` | `show-close-icon` |             | `boolean`                                                                | `false`            |
+| `trigger`       | `trigger`         |             | `Trigger.Click \| Trigger.Focus \| Trigger.Hover`                        | `Trigger.Click`    |
+<!-- mwc:auto:end -->
+
+---
+
+### `ms-table`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property                 | Attribute              | Description | Type                                                                                                                                                                                                       | Default       |
+| ------------------------ | ---------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| `bordered`               | `bordered`             |             | `boolean`                                                                                                                                                                                                  | `false`       |
+| `class`                  | `class`                |             | `string`                                                                                                                                                                                                   | `undefined`   |
+| `columns`                | --                     |             | `{ header: string; field?: string; align?: Align; alignHeader?: Align; width?: string; render?: (row: any, index: number) => any; sortable?: boolean; footer?: any; disabled?: (row: any) => boolean; }[]` | `[]`          |
+| `columnsReorderable`     | `columns-reorderable`  |             | `boolean`                                                                                                                                                                                                  | `false`       |
+| `data`                   | `data`                 |             | `any`                                                                                                                                                                                                      | `[]`          |
+| `dataKey`                | `data-key`             |             | `number \| string`                                                                                                                                                                                         | `'id'`        |
+| `disabledRow`            | --                     |             | `(row: any) => boolean`                                                                                                                                                                                    | `undefined`   |
+| `expandableRow`          | `expandable-row`       |             | `boolean`                                                                                                                                                                                                  | `false`       |
+| `groupRowsBy`            | `group-rows-by`        |             | `string`                                                                                                                                                                                                   | `undefined`   |
+| `idComponent`            | `id-component`         |             | `string`                                                                                                                                                                                                   | `''`          |
+| `isFramework`            | `is-framework`         |             | `boolean`                                                                                                                                                                                                  | `true`        |
+| `loading`                | `loading`              |             | `boolean`                                                                                                                                                                                                  | `false`       |
+| `nestedTableContent`     | `nested-table-content` |             | `any`                                                                                                                                                                                                      | `null`        |
+| `page`                   | `page`                 |             | `number`                                                                                                                                                                                                   | `0`           |
+| `paginator`              | `paginator`            |             | `boolean`                                                                                                                                                                                                  | `false`       |
+| `reorderable`            | `reorderable`          |             | `boolean`                                                                                                                                                                                                  | `false`       |
+| `rowClassName`           | --                     |             | `(event: any) => string`                                                                                                                                                                                   | `undefined`   |
+| `rowGroupHeaderTemplate` | --                     |             | `(groupValue: any, groupData: any[]) => any`                                                                                                                                                               | `undefined`   |
+| `rowGroupMode`           | `row-group-mode`       |             | `"subheader"`                                                                                                                                                                                              | `undefined`   |
+| `rowsPerPage`            | `rows-per-page`        |             | `number`                                                                                                                                                                                                   | `20`          |
+| `scrollerHeight`         | `scroller-height`      |             | `string`                                                                                                                                                                                                   | `undefined`   |
+| `selectionRow`           | `selection-row`        |             | `boolean`                                                                                                                                                                                                  | `false`       |
+| `selections`             | --                     |             | `any[]`                                                                                                                                                                                                    | `[]`          |
+| `showFooter`             | `show-footer`          |             | `boolean`                                                                                                                                                                                                  | `false`       |
+| `size`                   | `size`                 |             | `Size.Large \| Size.Normal \| Size.Small`                                                                                                                                                                  | `Size.Normal` |
+| `sortField`              | `sort-field`           |             | `string`                                                                                                                                                                                                   | `''`          |
+| `sortOrder`              | `sort-order`           |             | `any`                                                                                                                                                                                                      | `''`          |
+| `stickyHeader`           | `sticky-header`        |             | `boolean`                                                                                                                                                                                                  | `undefined`   |
+| `totalRecords`           | `total-records`        |             | `number`                                                                                                                                                                                                   | `0`           |
+
+
+## Events
+
+| Event             | Description | Type                    |
+| ----------------- | ----------- | ----------------------- |
+| `columnsReorder`  |             | `CustomEvent<any>`      |
+| `expand`          |             | `CustomEvent<any>`      |
+| `paginatorChange` |             | `CustomEvent<any>`      |
+| `reorder`         |             | `CustomEvent<any>`      |
+| `rowClick`        |             | `CustomEvent<any>`      |
+| `selection`       |             | `CustomEvent<string[]>` |
+| `sort`            |             | `CustomEvent<any>`      |
+<!-- mwc:auto:end -->
+
+---
+
+### `ms-text-editor`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property      | Attribute     | Description | Type      | Default                       |
+| ------------- | ------------- | ----------- | --------- | ----------------------------- |
+| `placeholder` | `placeholder` |             | `string`  | `'Type your content here...'` |
+| `readonly`    | `readonly`    |             | `boolean` | `false`                       |
+| `value`       | `value`       |             | `string`  | `''`                          |
+
+
+## Events
+
+| Event        | Description | Type                  |
+| ------------ | ----------- | --------------------- |
+| `textChange` |             | `CustomEvent<string>` |
+<!-- mwc:auto:end -->
+
+---
+
+## Feedback and progress
+
+### `ms-meter-group`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property           | Attribute           | Description | Type                         | Default        |
+| ------------------ | ------------------- | ----------- | ---------------------------- | -------------- |
+| `customClass`      | `custom-class`      |             | `string`                     | `''`           |
+| `labelOrientation` | `label-orientation` |             | `"horizontal" \| "vertical"` | `'horizontal'` |
+| `labelPosition`    | `label-position`    |             | `"end" \| "start"`           | `'end'`        |
+| `max`              | `max`               |             | `number`                     | `100`          |
+| `min`              | `min`               |             | `number`                     | `0`            |
+| `orientation`      | `orientation`       |             | `"horizontal" \| "vertical"` | `'horizontal'` |
+| `values`           | `values`            |             | `MeterValue[] \| string`     | `[]`           |
+<!-- mwc:auto:end -->
+
+---
+
+### `ms-progress-bar`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property               | Attribute | Description | Type                               | Default         |
+| ---------------------- | --------- | ----------- | ---------------------------------- | --------------- |
+| `displayValueTemplate` | --        |             | `(value: number) => any`           | `undefined`     |
+| `mode`                 | `mode`    |             | `"determinate" \| "indeterminate"` | `'determinate'` |
+| `unit`                 | `unit`    |             | `string`                           | `'%'`           |
+| `value`                | `value`   |             | `number`                           | `undefined`     |
+<!-- mwc:auto:end -->
+
+---
+
+### `ms-timeline`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property      | Attribute      | Description | Type                                                       | Default          |
+| ------------- | -------------- | ----------- | ---------------------------------------------------------- | ---------------- |
+| `align`       | `align`        |             | `Alignment.Alternate \| Alignment.Left \| Alignment.Right` | `Alignment.Left` |
+| `class`       | `class`        |             | `string`                                                   | `null`           |
+| `events`      | --             |             | `{ [key: string]: any; }[]`                                | `[]`             |
+| `idComponent` | `id-component` |             | `string`                                                   | `''`             |
+<!-- mwc:auto:end -->
+
+---
+
+### `ms-tooltip`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property      | Attribute      | Description | Type                                                                 | Default        |
+| ------------- | -------------- | ----------- | -------------------------------------------------------------------- | -------------- |
+| `class`       | `class`        |             | `string`                                                             | `null`         |
+| `content`     | `content`      |             | `string`                                                             | `''`           |
+| `position`    | `position`     |             | `Position.Bottom \| Position.Left \| Position.Right \| Position.Top` | `Position.Top` |
+| `showContent` | `show-content` |             | `boolean`                                                            | `true`         |
+<!-- mwc:auto:end -->
+
+---
+
+## Utilities
+
+### `ms-fieldset`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property      | Attribute      | Description | Type      | Default |
+| ------------- | -------------- | ----------- | --------- | ------- |
+| `customClass` | `custom-class` |             | `string`  | `''`    |
+| `legend`      | `legend`       |             | `string`  | `''`    |
+| `toggleable`  | `toggleable`   |             | `boolean` | `false` |
+<!-- mwc:auto:end -->
+
+---
+
+### `ms-file-upload`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property                        | Attribute                           | Description                                                                                      | Type                                                             | Default                         |
+| ------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------- | ------------------------------- |
+| `accept`                        | `accept`                            | Pattern to restrict allowed file types, e.g. "image/*"                                           | `string`                                                         | `undefined`                     |
+| `addLabel`                      | `add-label`                         | Heading label inside the empty drop zone                                                         | `string`                                                         | `'Add File'`                    |
+| `auto`                          | `auto`                              | When true, upload begins automatically after file selection                                      | `boolean`                                                        | `false`                         |
+| `browseLabel`                   | `browse-label`                      | Text for the clickable browse link inside the drop zone                                          | `string`                                                         | `'browse file'`                 |
+| `buttonsPosition`               | `buttons-position`                  | Position of Cancel/Upload buttons relative to the drop zone (activates the new drag-zone design) | `"bottom-center" \| "bottom-left" \| "left" \| "right" \| "top"` | `undefined`                     |
+| `cancelLabel`                   | `cancel-label`                      | Label for the cancel button                                                                      | `string`                                                         | `'Cancel'`                      |
+| `chooseLabel`                   | `choose-label`                      | Label for the choose button                                                                      | `string`                                                         | `'Choose'`                      |
+| `customUpload`                  | `custom-upload`                     | Whether to use a manual upload implementation via uploadHandlerEvent                             | `boolean`                                                        | `false`                         |
+| `disabled`                      | `disabled`                          | Disables the component                                                                           | `boolean`                                                        | `false`                         |
+| `dropLabel`                     | `drop-label`                        | Placeholder text shown in the empty drop zone                                                    | `string`                                                         | `'Drag and drop files here'`    |
+| `invalidFileSizeMessageDetail`  | `invalid-file-size-message-detail`  | Detail message for invalid file size                                                             | `string`                                                         | `'Maximum upload size is {0}.'` |
+| `invalidFileSizeMessageSummary` | `invalid-file-size-message-summary` | Summary message for invalid file size                                                            | `string`                                                         | `'Invalid file size'`           |
+| `maxFileSize`                   | `max-file-size`                     | Maximum file size allowed in bytes                                                               | `number`                                                         | `undefined`                     |
+| `mode`                          | `mode`                              | UI mode: "advanced" shows full UI, "basic" shows only the choose button                          | `"advanced" \| "basic"`                                          | `'advanced'`                    |
+| `multiple`                      | `multiple`                          | Allow selecting multiple files                                                                   | `boolean`                                                        | `false`                         |
+| `name`                          | `name`                              | Name of the request parameter for the files                                                      | `string`                                                         | `undefined`                     |
+| `previewWidth`                  | `preview-width`                     | Width of image thumbnails in pixels                                                              | `number`                                                         | `50`                            |
+| `uploadLabel`                   | `upload-label`                      | Label for the upload button                                                                      | `string`                                                         | `'Upload'`                      |
+| `url`                           | `url`                               | Remote URL to upload the files                                                                   | `string`                                                         | `undefined`                     |
+| `variant`                       | `variant`                           | Visual variant for the choose button: primary \| secondary \| success \| warning \| alert        | `"alert" \| "primary" \| "secondary" \| "success" \| "warning"`  | `'primary'`                     |
+| `withCredentials`               | `with-credentials`                  | Whether to send credentials with the request                                                     | `boolean`                                                        | `false`                         |
+
+
+## Events
+
+| Event                 | Description                                                                 | Type                                          |
+| --------------------- | --------------------------------------------------------------------------- | --------------------------------------------- |
+| `beforeDropEvent`     | Emitted before files are dropped                                            | `CustomEvent<DragEvent>`                      |
+| `beforeSelectEvent`   | Emitted before files are selected                                           | `CustomEvent<FileUploadSelectDetail>`         |
+| `beforeSendEvent`     | Emitted before the request is sent                                          | `CustomEvent<FileUploadBeforeDetail>`         |
+| `beforeUploadEvent`   | Emitted before upload starts (xhr and formData available for customization) | `CustomEvent<FileUploadBeforeDetail>`         |
+| `clearEvent`          | Emitted when the file queue is cleared without uploading                    | `CustomEvent<void>`                           |
+| `errorEvent`          | Emitted when upload fails                                                   | `CustomEvent<FileUploadUploadDetail>`         |
+| `progressEvent`       | Emitted during upload with progress info                                    | `CustomEvent<FileUploadProgressDetail>`       |
+| `removeEvent`         | Emitted when a single file is removed from the queue                        | `CustomEvent<FileUploadRemoveDetail>`         |
+| `selectEvent`         | Emitted when files are selected                                             | `CustomEvent<FileUploadSelectDetail>`         |
+| `uploadEvent`         | Emitted when upload completes successfully                                  | `CustomEvent<FileUploadUploadDetail>`         |
+| `uploadHandlerEvent`  | Emitted in customUpload mode so the consumer can handle the actual upload   | `CustomEvent<FileUploadHandlerDetail>`        |
+| `validationFailEvent` | Emitted when a file fails size validation                                   | `CustomEvent<FileUploadValidationFailDetail>` |
+
+
+## Methods
+
+### `clear() => Promise<void>`
+
+
+
+#### Returns
+
+Type: `Promise<void>`
+
+
+
+### `formatSize(bytes: number) => Promise<string>`
+
+
+
+#### Returns
+
+Type: `Promise<string>`
+
+
+
+### `getElement() => Promise<HTMLElement>`
+
+
+
+#### Returns
+
+Type: `Promise<HTMLElement>`
+
+
+
+### `getFiles() => Promise<File[]>`
+
+
+
+#### Returns
+
+Type: `Promise<File[]>`
+
+
+
+### `getInput() => Promise<HTMLInputElement>`
+
+
+
+#### Returns
+
+Type: `Promise<HTMLInputElement>`
+
+
+
+### `getUploadedFiles() => Promise<File[]>`
+
+
+
+#### Returns
+
+Type: `Promise<File[]>`
+
+
+
+### `setFiles(files: File[]) => Promise<void>`
+
+
+
+#### Returns
+
+Type: `Promise<void>`
+
+
+
+### `setUploadedFiles(files: File[]) => Promise<void>`
+
+
+
+#### Returns
+
+Type: `Promise<void>`
+
+
+
+### `upload() => Promise<void>`
+
+
+
+#### Returns
+
+Type: `Promise<void>`
+<!-- mwc:auto:end -->
+
+---
+
+### `ms-gauge-chart`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property            | Attribute            | Description                                                                                                                                                                        | Type                                                                            | Default        |
+| ------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | -------------- |
+| `animated`          | `animated`           | Whether to animate the needle and arc fill when the value changes.                                                                                                                 | `boolean`                                                                       | `true`         |
+| `animationDuration` | `animation-duration` | Duration of the needle animation in milliseconds.                                                                                                                                  | `number`                                                                        | `1500`         |
+| `arcWidth`          | `arc-width`          | Radial thickness in SVG units of the arc band. Suggested values: `6` thin · `10` medium · `14` default · `20` thick · `28` extra thick.                                            | `number`                                                                        | `14`           |
+| `arcs`              | --                   | Color zones ordered by `limit` ascending. Each `limit` is a fraction [0-1] of the range. Adjacent zone colors blend smoothly at their boundaries.                                  | `GaugeArc[]`                                                                    | `DEFAULT_ARCS` |
+| `color`             | `color`              | Optional Maxi color variant for the arc and needle. Overrides the `arcs` gradient. Accepted values: `'primary'` · `'secondary'` · `'success'` · `'warning'` · `'alert'` · `'info'` | `"" \| "alert" \| "info" \| "primary" \| "secondary" \| "success" \| "warning"` | `''`           |
+| `decimals`          | `decimals`           | Number of decimal places shown in the value. 0 = no decimals (default).                                                                                                            | `number`                                                                        | `0`            |
+| `label`             | `label`              | Primary label shown below the value (e.g. 'AVG per min').                                                                                                                          | `string`                                                                        | `''`           |
+| `labelColor`        | `label-color`        | Color of the primary label text. Defaults to the current zone/arc color (same as value). Set explicitly to override.                                                               | `string`                                                                        | `''`           |
+| `max`               | `max`                | Maximum value of the gauge range.                                                                                                                                                  | `number`                                                                        | `100`          |
+| `min`               | `min`                | Minimum value of the gauge range.                                                                                                                                                  | `number`                                                                        | `0`            |
+| `reactiveColor`     | `reactive-color`     | When true, the arc automatically switches to a monochromatic gradient of the current zone color (determined by `arcs` boundaries) as the value changes — no external JS needed.    | `boolean`                                                                       | `false`        |
+| `subLabel`          | `sub-label`          | Secondary label shown below the primary label (e.g. '(last 10 min)').                                                                                                              | `string`                                                                        | `''`           |
+| `subLabelColor`     | `sub-label-color`    | Color of the sub-label text. Defaults to the placeholder text color token.                                                                                                         | `string`                                                                        | `'#777777'`    |
+| `ticks`             | `ticks`              | Number of white tick lines drawn over the arc.                                                                                                                                     | `number`                                                                        | `12`           |
+| `unit`              | `unit`               | Unit used in the accessibility aria-label (e.g. '%', 'kbit/s', '°C'). Not shown visually — put the unit in `label` instead.                                                        | `string`                                                                        | `''`           |
+| `value`             | `value`              | Current value to display on the gauge.                                                                                                                                             | `number`                                                                        | `0`            |
+| `width`             | `width`              | CSS width of the component container (e.g. '300px', '100%').                                                                                                                       | `string`                                                                        | `'300px'`      |
+<!-- mwc:auto:end -->
+
+---
+
+### `ms-paginator`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property              | Attribute                | Description | Type      | Default                                                                     |
+| --------------------- | ------------------------ | ----------- | --------- | --------------------------------------------------------------------------- |
+| `class`               | `class`                  |             | `string`  | `undefined`                                                                 |
+| `currentPage`         | `current-page`           |             | `number`  | `0`                                                                         |
+| `first`               | `first`                  |             | `number`  | `0`                                                                         |
+| `pageLinkSize`        | `page-link-size`         |             | `number`  | `5`                                                                         |
+| `rows`                | `rows`                   |             | `number`  | `10`                                                                        |
+| `rowsPerPageOptions`  | --                       |             | `Item[]`  | `[{ label:'10', value:10}, {label:'20', value:20}, {label:'30', value:30}]` |
+| `showPerPageDropdown` | `show-per-page-dropdown` |             | `boolean` | `true`                                                                      |
+| `totalRecords`        | `total-records`          |             | `number`  | `undefined`                                                                 |
+
+
+## Events
+
+| Event        | Description | Type                                                                                       |
+| ------------ | ----------- | ------------------------------------------------------------------------------------------ |
+| `pageChange` |             | `CustomEvent<{ first: number; rows: number; currentPage: number; totalRecords: number; }>` |
+<!-- mwc:auto:end -->
+
+---
+
+### `ms-preload`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property | Attribute | Description | Type     | Default     |
+| -------- | --------- | ----------- | -------- | ----------- |
+| `image`  | `image`   |             | `string` | `undefined` |
+| `text`   | `text`    |             | `string` | `undefined` |
+<!-- mwc:auto:end -->
+
+---
+
+### `ms-scroll-top`
+
+<!-- mwc:auto:start -->
+## Overview
+
+ScrollTop component that allows users to scroll back to the top of a scrollable container or window.
+
+## Properties
+
+| Property      | Attribute      | Description                                                                                                                          | Type                   | Default     |
+| ------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------- | ----------- |
+| `behavior`    | `behavior`     | Scroll behavior when clicking the button.                                                                                            | `"auto" \| "smooth"`   | `'smooth'`  |
+| `customClass` | `custom-class` | Custom CSS class for additional styling.                                                                                             | `string`               | `undefined` |
+| `icon`        | `icon`         | Custom icon URL to display in the button.                                                                                            | `string`               | `undefined` |
+| `target`      | `target`       | Target element to listen for scroll events. Use 'window' to listen to the window scroll or 'parent' to listen to the parent element. | `"parent" \| "window"` | `'window'`  |
+| `threshold`   | `threshold`    | Scroll position threshold in pixels after which the button becomes visible.                                                          | `number`               | `400`       |
+
+
+## Events
+
+| Event    | Description                                       | Type                |
+| -------- | ------------------------------------------------- | ------------------- |
+| `msHide` | Event emitted when the component becomes hidden.  | `CustomEvent<void>` |
+| `msShow` | Event emitted when the component becomes visible. | `CustomEvent<void>` |
+<!-- mwc:auto:end -->
+
+---
+
+## New components
+
+### `ms-web-card`
+
+<!-- mwc:auto:start -->
+## Properties
+
+| Property         | Attribute         | Description | Type      | Default     |
+| ---------------- | ----------------- | ----------- | --------- | ----------- |
+| `class`          | `class`           |             | `string`  | `null`      |
+| `footer`         | `footer`          |             | `any`     | `undefined` |
+| `header`         | `header`          |             | `any`     | `undefined` |
+| `idComponent`    | `id-component`    |             | `string`  | `null`      |
+| `isFramework`    | `is-framework`    |             | `boolean` | `true`      |
+| `subTitle`       | `sub-title`       |             | `string`  | `null`      |
+| `titleComponent` | `title-component` |             | `string`  | `null`      |
+<!-- mwc:auto:end -->
+
+---
