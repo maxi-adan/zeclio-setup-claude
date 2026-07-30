@@ -59,6 +59,32 @@ return (
 
 ---
 
+### `MsDialog` — hijos condicionales dentro del diálogo: usar toggle de CSS, no montar/desmontar
+
+**Problema**: `MsDialog` no usa Shadow DOM (`shadow: false`), así que Stencil reubica internamente los nodos hijos livianos (light DOM) que el framework consumidor (React) insertó, moviéndolos a la posición del `<slot>` dentro de su propio template — un movimiento de DOM que React nunca llega a ver. Si un hijo dentro del diálogo se monta/desmonta condicionalmente (`{condition && <Componente/>}`) mientras el diálogo ya está abierto, React intenta hacer `removeChild` usando la referencia de padre que recuerda de cuando insertó ese nodo originalmente — pero Stencil ya lo movió a otro punto del DOM. Resultado: `NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node`.
+
+**Patrón correcto en ZEUS:**
+
+```jsx
+// ✅ CORRECTO — el nodo siempre está montado, solo se oculta con CSS
+<div className={`text-center mt-4 ${showSuccessButton ? "" : "d-none"}`}>
+  <MsButton label="Continuar" onClick={onContinue} />
+</div>
+
+// ❌ INCORRECTO — el botón se monta/desmonta condicionalmente dentro del MsDialog
+{showSuccessButton && (
+  <div className="text-center mt-4">
+    <MsButton label="Continuar" onClick={onContinue} />
+  </div>
+)}
+```
+
+> Este problema es DISTINTO al de la sección anterior ("nunca renderizar antes de tener los datos"): aquel es sobre el `visible` del diálogo entre distintas aperturas; este es sobre contenido que aparece/desaparece **mientras el mismo diálogo ya está abierto**. Ambos producen el mismo error (`removeChild`) pero requieren fixes distintos — reordenar `setState` o usar `ReactDOM.unstable_batchedUpdates` (React 17 no agrupa automáticamente los `setState` fuera de un handler de evento — p. ej. dentro de un `.then()`/`async` o un `setTimeout`) puede evitar otros síntomas relacionados, pero si el crash es específicamente por un hijo que se monta/desmonta, la única solución real es no desmontarlo nunca — ocultarlo con CSS.
+
+**Componentes afectados por este patrón**: cualquier componente Stencil con `shadow: false` que reciba children condicionales desde React — confirmado en `MsDialog`; aplica potencialmente a cualquier otro componente con la misma configuración que acepte contenido dinámico como children (revisar `shadow: false` en la fuente del componente si aparece este error).
+
+---
+
 ### `MsDialog` — scroll lock robusto ante múltiples diálogos y otros modales
 
 `MsDialog` bloquea el scroll general de la página (`<html>` y `<body>`) mientras cualquier instancia esté `visible`, usando un contador de referencias compartido entre **todas** las instancias — soporta diálogos simultáneos/en secuencia sin desbloquear el scroll hasta que cierre el último. El bloqueo se hace agregando/quitando una clase CSS propia (`ms-dialog-scroll-lock`, definida en `global.css`/`global-zeclio.css`), **nunca** leyendo ni escribiendo el `overflow` inline directamente — así que convive de forma segura con cualquier otro bloqueador de scroll independiente que ya exista en el microfront (por ejemplo el `Modal`/`Offcanvas` de `react-bootstrap`, usado en varios microfronts de ZEUS).
