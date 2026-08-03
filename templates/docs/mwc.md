@@ -3135,6 +3135,8 @@ Floating content panel that opens on click, hover, or focus. State is fully inte
 
 > **`trigger='hover'` timing is configurable** via `showDelay`/`hideDelay`. Moving the pointer from the trigger into the popover content cancels the pending close, keeping it open.
 
+> **⚠️ `position: absolute` relative to its wrapper — avoid as a hover trigger inside scrollable containers.** Unlike `ms-tooltip` (which was moved to `position: fixed` after it caused a hover-flicker loop inside a horizontally-scrolling table — see `ms-tooltip`'s notes above), `ms-popover`'s content still positions relative to its own wrapper. If the wrapper sits inside a scrollable ancestor and the popover's content overflows the trigger's cell, it can grow that ancestor's `scrollWidth`/`scrollHeight`, toggling its scrollbar and looping `trigger='hover'` on/off. Not yet reproduced/fixed here — treat as a known risk, same fix (`position: fixed` + viewport-absolute coordinates) would apply if it comes up.
+
 **Slots:**
 
 | Slot      | Description                                        |
@@ -3366,7 +3368,13 @@ Tooltip on hover. `shadow: false` — external CSS penetrates.
 
 > **Hover only — no click, no focus.** Shows on `mouseenter`, hides on `mouseleave`, optionally delayed via `showDelay`/`hideDelay`.
 
-> **Auto-repositioning:** the tooltip isn't locked to the requested `position`. If it doesn't fit in the viewport there, it flips to the opposite side, then falls back to `bottom`, then `top` — and is clamped horizontally so it never overflows the left/right viewport edge.
+> **Auto-repositioning:** the tooltip isn't locked to the requested `position`. If it doesn't fit in the viewport there, it flips to the opposite side, then falls back to `bottom`, then `top` — and is clamped to both viewport edges (horizontal and vertical) so it never overflows.
+
+> **`position: fixed`, not `absolute`.** The bubble (`.ms-tooltip-content`) positions itself with absolute viewport coordinates, computed fresh on every show via `getBoundingClientRect()` — it does **not** sit relative to `.ms-tooltip-wrapper`. This is deliberate: with `position: absolute`, a bubble that visually overflows its trigger's cell still counts toward the scrollable-overflow area of any scrollable ancestor it's nested in (e.g. a horizontally-scrolling table container), which can toggle that ancestor's scrollbar on/off as the tooltip shows/hides — shifting layout under the cursor and looping the hover on/off. `position: fixed` never contributes to an ancestor's `scrollWidth`/`scrollHeight`, so it can't trigger that loop. Trade-off: since `fixed` doesn't track the trigger across scroll, the tooltip **hides itself on window `scroll`/`resize`** while open instead of drifting out of place.
+>
+> **Rule of thumb for any trigger inside a scrollable container (tables, horizontal-scroll rows, etc.): don't use `position: absolute` for a hover popup.** `ms-popover` still uses the old `absolute`-relative-to-wrapper scheme and is exposed to the same class of bug if placed inside a scrollable ancestor — hasn't reproduced there yet, but it's the same architecture, so treat it as a known risk until it gets the same `fixed`-position treatment.
+
+> **Width measurement works around a `word-wrap: break-word` + shrink-to-fit quirk.** A `width: auto` box with `word-wrap: break-word` inside a shrink-to-fit context (which `position: fixed` with no explicit width is) can collapse toward `min-width` instead of its natural single-line width in some engines, wrapping text that should fit on one line. `calculatePosition()` works around this by measuring the bubble with `white-space: nowrap` forced on for one read, clamping that to `[min-width, max-width]` in JS, then applying it as an explicit `width` before the real (wrapping-enabled) height is measured.
 
 **Slot:** default — element that triggers the tooltip.
 
