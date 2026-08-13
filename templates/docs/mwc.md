@@ -5,7 +5,7 @@ description: Implements components from the maxi-web-components library in React
 
 # MAXI Web Components — Complete Reference
 
-> UI component library built with [Stencil.js](https://stenciljs.com/), distributed as three separate packages for use in Vanilla JS, React and Angular. Current version: **9.0.0**.
+> UI component library built with [Stencil.js](https://stenciljs.com/), distributed as three separate packages for use in Vanilla JS, React and Angular. Current version: **10.0.4**.
 
 ---
 
@@ -566,6 +566,10 @@ Every component consumes CSS custom properties defined in `global.css` / `global
 | | `--maxi-input-dropdown-active-background-color` | `#C3DF89` |
 | **Checkbox / Radio** | `--maxi-checkbox-disabled-background` | `#C2C2C2` |
 | | `--maxi-radio-disabled-background-color` | `#C2C2C2` |
+| **Slider** | `--maxi-slider-track-background` | `var(--maxi-input-border-color)` |
+| | `--maxi-slider-range-background` | `var(--maxi-color-primary)` |
+| | `--maxi-slider-handle-background` | `var(--maxi-color-white)` |
+| | `--maxi-slider-handle-border-color` | `var(--maxi-color-primary)` |
 | **Button** | `--maxi-button-primary-background` | `var(--maxi-color-primary)` |
 | | `--maxi-button-primary-hover-background` | `#133787` |
 | | `--maxi-button-secondary-background` | `#425CC7` |
@@ -692,11 +696,12 @@ interface Item {
   value: string | number;
   icon?: string; // CSS class or HTML for the icon
   disabled?: boolean;
+  tooltip?: string;
 }
 
-// GroupItem — for grouped options
-interface GroupItem {
-  label: string; // group name
+// GroupItem — for grouped options. Extends Item, so a group also carries
+// value/icon/disabled/tooltip (its `value` is ignored during selection).
+interface GroupItem extends Item {
   items: Item[];
 }
 
@@ -1019,7 +1024,7 @@ OTP (One-Time Password) input. Renders N individual single-character boxes. `sha
 | `idComponent`  | `string \| null`                    | `'ms-input-otp'` | HTML `id`                                            |
 | `length`       | `number`                            | `4`              | Number of input boxes                                |
 | `type`         | `'numeric' \| 'text' \| 'password'` | `'text'`         | Character type (see below)                           |
-| `value`        | `any \| null`                       | `null`           | Full code as string (mutable, reactive via `@Watch`) |
+| `value`        | `any \| null`                       | `null`           | Full code as string — **write-only from the outside**, see note below |
 | `disabled`     | `boolean`                           | `false`          | Disabled state (sets `readOnly` + `disabled`)        |
 | `readonly`     | `boolean`                           | `false`          | Focusable/submitted with a form but not user-editable |
 | `name`         | `string`                            | `null`           | Native HTML `name` attribute                         |
@@ -1036,8 +1041,10 @@ OTP (One-Time Password) input. Renders N individual single-character boxes. `sha
 - `'password'` → `type="password"` on each input (chars masked)
 - `'numeric'` → `type="text"` + `inputMode="numeric"` (numeric mobile keyboard) + strips non-digits on input and paste
 
+> ⚠️ **`value` is never updated by the component — read the events, not the prop.** Although `value` is declared mutable, nothing in the component ever assigns to it: what the user types or pastes lives only in internal state. Reading `el.value` (or your React state bound to it) after the user types returns whatever you last set from the outside, **not** the entered code. Always take the code from `inputEvent`/`completeEvent`. Setting `value` from the outside does still work (a `@Watch` syncs it into the boxes).
+
 **Keyboard behavior:**
-- Typing a character auto-advances focus to the next box
+- Typing a character auto-advances focus to the next box; typing in the **last** box wraps focus back to the **first** box (same after a paste that fills every box)
 - `Backspace` on an empty box moves focus back to the previous box
 
 **Paste:**
@@ -1138,12 +1145,14 @@ Styled checkbox with label support.
 | `name`     | `name`     | `string`  | `undefined` | HTML `name` attribute — use to group in forms                        |
 | `value`    | `value`    | `string`  | `undefined` | HTML `value` attribute on the inner `<input>`                        |
 | `class`    | `class`    | `string`  | `undefined` | Extra CSS class applied to the inner `<input>` element               |
-| `required` | `required` | `boolean` | `false`     | Required field — triggers built-in validation on toggle/blur         |
+| `required` | `required` | `boolean` | `false`     | Required field — validates when `checked` changes and on native form submit (there is **no** blur handling) |
 | `invalid`  | `invalid`  | `boolean` | `false`     | External error state                                                  |
 | `errorMessage` | `error-message` | `string` | `undefined` | Error text — only shown when `invalid=true`                      |
 | `requiredMessage` | `required-message` | `string` | `'This field is required'` | Overrides the default required-field error text |
 
-`ms-checkbox` supports the **same validation pattern as `ms-input-field`/`ms-radio`**: set `required` to validate on toggle/blur, `invalid`+`errorMessage` for externally-driven error state, `requiredMessage` to customize the default message, and listen for `validationChange`.
+`ms-checkbox` supports the **same validation pattern as `ms-input-field`/`ms-radio`**: set `required` to validate on toggle, `invalid`+`errorMessage` for externally-driven error state, `requiredMessage` to customize the default message, and listen for `validationChange`.
+
+> **No blur validation.** `ms-checkbox` has no focus/blur handling at all — validation runs on the `checked`/`required`/`invalid` watchers and on the native `onInvalid` event during form submit. Tabbing away from an unchecked required checkbox does **not** trigger the error state on its own.
 
 **Events:**
 
@@ -1175,7 +1184,8 @@ Styled radio button. `shadow: false` — external CSS penetrates.
 | `name`     | `string`            | `undefined` | Group name for HTML radio grouping — used as the native input's `value` **only when `value` is left unset** |
 | `label`    | `string`            | `undefined` | Label text                                                            |
 | `value`    | `string`            | `undefined` | Passed straight through to the native `<input value>` whenever set — falls back to `name` only if omitted |
-| `checked`  | `boolean` (reflect, mutable) | `undefined` | Selected state                                         |
+| `checked`  | `boolean` (reflect, mutable) | `undefined` | Selected state — what you set from outside to control the radio |
+| `isChecked`| `boolean` (mutable) | `undefined` | **Internal selection state written by the component itself** on user click, and what `radioChange` emits. Required validation passes when *either* `checked` or `isChecked` is true. Normally you read this rather than set it. |
 | `disabled` | `boolean`           | `undefined` | Disabled                                                              |
 | `readonly` | `boolean`           | `false`     | Focusable/submitted with a form but not user-selectable (sets `aria-readonly`) |
 | `required` | `boolean`           | `false`     | Required — validated **per radio** (invalid while this radio is unchecked), not per-group |
@@ -1193,7 +1203,7 @@ Styled radio button. `shadow: false` — external CSS penetrates.
 | Event | Payload | Description |
 |---|---|---|
 | `radioChange` | `boolean` | `true` when this radio becomes selected |
-| `validationChange` | `{ isValid: boolean; fieldId: string; value: boolean; errorMessage: string }` | Emitted when validity changes |
+| `validationChange` | `{ isValid: boolean; fieldId: string; value: string; errorMessage: string }` | Emitted when validity changes. **`value` is the radio's `value` prop (a string), not a boolean** — unlike `ms-checkbox`, which emits its boolean `checked` there. `fieldId` falls back to `'ms-radio'` when `idRadio` is unset. |
 
 ```tsx
 // React — radio group
@@ -1235,7 +1245,9 @@ Integer stepper with + and − buttons. Uses **`shadow: true`** — element styl
 | Variable           | Default   | Description                                           |
 | ------------------ | --------- | ----------------------------------------------------- |
 | `--ms-cn-width`    | `160px`   | Total width of the control (buttons + input combined) |
-| `--ms-cn-input-height` | `40px` | Height of the control row                            |
+| `--ms-cn-field-height` | `40px` | Height of the control row                            |
+
+> ⚠️ **Do not use `--ms-cn-input-height`.** The component's CSS declares it but never reads it — setting it has no effect. The variable that actually drives the row height is `--ms-cn-field-height` (the `small` variant uses its own `--ms-cn-input-height-small`).
 
 **Events:**
 
@@ -1352,6 +1364,10 @@ Rotary dial control for selecting numeric values. **`shadow: true`** — CSS is 
 
 Propagation runs on initial mount and again via a `MutationObserver` watching for children added/removed later — dynamically-inserted children still get `disabled`/`invalid` applied. Setting either prop back to `undefined` stops the group from touching that attribute at all (it does **not** force children back to `false`); explicitly set `false` if you need to force-clear it.
 
+> ⚠️ **Direct children only — propagation does not descend into wrappers.** The component walks `this.el.children` and observes `{ childList: true }` **without `subtree: true`**, so only immediate children are touched. An `ms-*` control nested inside anything — most commonly `<span class="ms-input-group-addon"><ms-checkbox/></span>`, the exact pattern shown in the addon examples below — will **never** receive `disabled`/`invalid` from the group, and changes deeper in the tree don't re-trigger propagation either. Put controls you want propagated as direct children of `<ms-input-group>`, or set `disabled`/`invalid` on the nested ones yourself.
+
+Both props are `reflect: true`, so they appear as attributes in the DOM.
+
 **Recognized child tags for propagation:** `ms-input-field`, `ms-input-number`, `ms-autocomplete`, `ms-dropdown`, `ms-multiselect`, `ms-calendar`, `ms-chips`, `ms-select-button`, `ms-control-number`, `ms-checkbox`, `ms-radio`, `ms-input-switch`, `ms-button`.
 
 **CSS classes (still apply regardless of whether you use the `<ms-input-group>` tag or a plain `<div>`):**
@@ -1403,6 +1419,113 @@ Propagation runs on initial mount and again via a `MutationObserver` watching fo
   <ms-input-field placeholder="First name"></ms-input-field>
   <ms-input-field placeholder="Last name"></ms-input-field>
 </ms-input-group>
+```
+
+---
+
+#### `ms-textarea`
+
+Multi-line text input with the same floating-label/validation pattern as `ms-input-field`. `shadow: false`.
+
+| Prop          | Attribute       | Type                                          | Default                   | Description                                                                                     |
+| ------------- | --------------- | ---------------------------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------ |
+| `idComponent` | `id-component`  | `string`                                       | `'ms-textarea'`            | `id` on the `<textarea>`, linked via `<label htmlFor>`, and used as `fieldId` in `validationChange` |
+| `value`       | `value`         | `string \| null`                               | `null`                      | Controlled value (mutable)                                                                       |
+| `label`       | `label`         | `string \| null`                               | `null`                      | Floating label — shown above the field when focused or filled                                    |
+| `placeholder` | `placeholder`   | `string \| null`                               | `null`                      | Hidden while a floating label is present and the field isn't focused (same behavior as `ms-input-field`) |
+| `rows`        | `rows`          | `number`                                       | `4`                         | Native `rows` attribute                                                                          |
+| `size`        | `size`          | `string` (`TextareaSize`: `'small'\|'normal'\|'large'`) | `'normal'`         | Visual size preset                                                                               |
+| `variant`     | `variant`       | `string` (`TextareaVariant`: `'outlined'\|'filled'`) | `'outlined'`          | Visual variant — `'filled'` reads `--maxi-input-filled-background` (fallback `#F0F5FF`), not pre-seeded in `global.css`/`global-zeclio.css` |
+| `maxLength`   | `max-length`    | `number \| null`                               | `null`                      | Native `maxlength` — pair with `showCounter` to display it                                       |
+| `showCounter` | `show-counter`  | `boolean`                                      | `false`                     | Shows a `current/maxLength` counter below the field — only renders when `maxLength` is also set  |
+| `autoResize`  | `auto-resize`   | `boolean`                                      | `false`                     | Grows the textarea's height to fit its content instead of scrolling; recalculated on input and whenever this prop turns on |
+| `disabled`    | `disabled`      | `boolean`                                      | `false`                     | Disabled                                                                                         |
+| `required`    | `required`      | `boolean`                                      | `false`                     | Automatic required-field validation on blur/value change                                        |
+| `invalid`     | `invalid`       | `boolean`                                      | `false`                     | External error state                                                                             |
+| `errorMessage`| `error-message` | `string \| null`                               | `null`                      | Error text — only shown when `invalid=true`                                                     |
+| `customClass` | `custom-class`  | `string \| null`                               | `null`                      | Extra CSS class on the `<textarea>` element                                                     |
+
+`ms-textarea` implements the **same dual validation system as `ms-input-field`/`ms-autocomplete`/`ms-dropdown`**: `required` for automatic empty-value validation, `invalid`+`errorMessage` for externally-driven validation, both combine, and `validationChange` emits on every change.
+
+> ⚠️ **`requiredMessage` is NOT a prop on `ms-textarea`** (unlike `ms-input-field`, `ms-dropdown`, `ms-autocomplete`, `ms-checkbox`, `ms-radio`, which all expose it). In `ms-textarea.tsx` it's a `private` class field hardcoded to the default `'This field is required'`, so setting `requiredMessage="Campo obligatorio"` from a microfront **silently does nothing**. To show a translated/custom required message, drive the error yourself with `invalid` + `errorMessage` instead of using `required`.
+
+**Events:**
+
+| Event | Payload | Description |
+|---|---|---|
+| `inputEvent` | `string` | Native `input` — current value on every keystroke |
+| `changeEvent` | `string` | Native `change` — value on commit (blur or native change) |
+| `focusEvent` | `string` | Native `focus` |
+| `blurEvent` | `string` | Native `blur` — also runs required validation |
+| `validationChange` | `{ isValid: boolean; fieldId: string; value: string \| null; errorMessage: string }` | Emitted when validity changes |
+
+```tsx
+// React
+<MsTextarea
+  label="Comments"
+  rows={5}
+  maxLength={280}
+  showCounter
+  autoResize
+  value={comments}
+  onInputEvent={(e) => setComments(e.detail)}
+/>
+```
+
+---
+
+#### `ms-slider`
+
+Draggable single-value or range slider, mouse/touch/keyboard operable. `shadow: true` — external CSS does not penetrate; theme it via the `--maxi-slider-*` CSS variables (see [Section 3](#3-theming-system-and-css-variables)).
+
+| Prop            | Attribute        | Type                          | Default                          | Description                                                                                     |
+| --------------- | ---------------- | ------------------------------ | ---------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `value`         | `value`          | `number \| [number, number]`   | `0`                                 | Controlled value (mutable) — a tuple `[first, second]` when `range` is `true`, a single number otherwise |
+| `range`         | `range`          | `boolean`                     | `false`                             | Two-handle range mode instead of a single value                                                 |
+| `min` / `max`   | `min` / `max`    | `number`                      | `0` / `100`                        | Bounds of the visual track                                                                       |
+| `restrictedMin` / `restrictedMax` | `restricted-min` / `restricted-max` | `number \| null` | `null` | Narrows the *reachable* range without moving the visual track — the track still spans the full `min`/`max`, but handles can't be dragged/stepped past these bounds. The out-of-bounds portions render as a diagonal-hatch overlay on the track. |
+| `step`          | `step`           | `number`                      | `1`                                 | Increment for dragging (rounded) and for arrow-key presses                                       |
+| `orientation`   | `orientation`    | `string` (`SliderOrientation`: `'horizontal'\|'vertical'`) | `'horizontal'` | Track direction                                                            |
+| `disabled`      | `disabled`       | `boolean`                     | `false`                             | Disabled — not draggable/focusable                                                               |
+| `readOnly`      | `read-only`      | `boolean`                     | `false`                             | Focusable but not draggable/keyboard-adjustable                                                  |
+| `showTooltip`   | `show-tooltip`   | `boolean`                     | `false`                             | Shows a value tooltip above the active/focused handle                                            |
+| `valueTemplate` | `value-template` | `string`                      | `'{value}'`                        | Template for the tooltip/`aria-valuetext` text — `{value}` is replaced with the handle's current value |
+| `customClass`   | `custom-class`   | `string \| null`               | `null`                              | Extra class on the host                                                                          |
+
+Each handle is a real `role="slider"` element with `aria-valuemin`/`aria-valuemax`/`aria-valuenow`/`aria-valuetext`/`aria-orientation`, focusable and keyboard-operable (Arrow keys step by `step`, Home/End jump to the effective min/max). Dragging fires `inputEvent` continuously; `changeEvent` only fires once, on pointer-up or on a keyboard step — use `inputEvent` for live previews and `changeEvent` for commit-on-release logic (e.g. an API call).
+
+> **`shadow: true` — styling hooks are CSS variables only.** Unlike almost every other `ms-*` component (which are `shadow: false` and let external CSS reach their internals), you **cannot** target `ms-slider`'s inner classes from a microfront's stylesheet. Besides the four `--maxi-slider-*` theme colors, the component exposes two sizing variables on its host — set them on the element or a wrapper, since custom properties do inherit through the shadow boundary:
+>
+> | Variable | Default | Controls |
+> |---|---|---|
+> | `--ms-slider-track-height` | `6px` | Track thickness (its width when vertical) |
+> | `--ms-slider-handle-size` | `18px` | Handle diameter |
+>
+> ```css
+> ms-slider { --ms-slider-track-height: 10px; --ms-slider-handle-size: 24px; }
+> ```
+
+> **Vertical orientation ships with a fixed default height of `200px`** (horizontal is `width: 100%` and auto-height). To change it, set `height` on the element itself — an outside rule like `ms-slider { height: 400px }` overrides the component's own `:host` rule.
+
+**Events:**
+
+| Event | Payload | Description |
+|---|---|---|
+| `inputEvent` | `number \| [number, number]` | Fires continuously while dragging or on every keyboard step |
+| `changeEvent` | `number \| [number, number]` | Fires once when the drag ends (pointer-up) or after a keyboard step |
+
+```tsx
+// React — range slider with restricted bounds and a tooltip
+<MsSlider
+  range
+  min={0}
+  max={100}
+  restrictedMin={20}
+  restrictedMax={80}
+  showTooltip
+  value={[30, 70]}
+  onChangeEvent={(e) => setRange(e.detail)} // e.detail = [number, number]
+/>
 ```
 
 ---
@@ -1467,6 +1590,8 @@ interface ValidationDetail {
 **Behavior:** auto-positions the option panel above or below based on available viewport space.
 
 > When `required=true` and the field is empty, the component auto-validates and shows `'This field is required'` — no need to set `invalid` manually.
+
+> **Long selected labels truncate with an ellipsis** — the trigger text is single-line (`white-space: nowrap; overflow: hidden; text-overflow: ellipsis`) and cuts off with `…` when it doesn't fit the trigger's width. Always on, not configurable.
 
 ```tsx
 // React
@@ -1535,6 +1660,8 @@ Multi-select with search, select-all and groups. `shadow: false` — external CS
 
 > **"N items selected"** — when more than 3 items are selected the trigger shows `"N items selected"` regardless of the `display` value. This is automatic, not configurable.
 
+> **Long text truncates with an ellipsis** — the comma-joined labels (`display='comma'`) and the `"N items selected"` text are single-line and cut off with `…` when they don't fit the trigger's width. Always on, not configurable. `display='chip'` also stays on one clipped line: `ms-multiselect` overrides the standalone `ms-chips` wrapping (`display: flex; flex-wrap: wrap`) with `display: inline-block; white-space: nowrap; text-overflow: ellipsis` when chips are rendered inside the trigger — so chips do **not** wrap to a second row here, unlike a standalone `<ms-chips>`.
+
 > **Validation:** `errorMessage` only shown when `invalid=true`. When `required` fails, shows `requiredMessage` (default `"This field is required"`).
 
 > **`display='chip'`** — uses `ms-chips` internally. Chips are removable by the user. Does **not** work correctly with `optionGroup=true`.
@@ -1577,9 +1704,10 @@ Text field with dynamic suggestions (typeahead).
 | `idComponent`  | `string`                   | `'ms-autocomplete'`   | HTML `id` for the input                                  |
 | `label`        | `string \| null`           | `null`                | Floating label. When `null`, renders without floating label |
 | `placeholder`  | `string`                   | `'Type to search...'` | Placeholder text                                         |
-| `value`        | `string \| number \| null` | `null`                | Current selected value (pre-fills the input text)        |
+| `value`        | `string \| number \| null` | `null`                | Selected value. **Does not pre-fill on first render** — see note below |
 | `class`        | `string \| null`           | `null`                | Extra CSS class on the input element                     |
 | `showIcon`     | `boolean`                  | `false`               | Show search icon inside the input                        |
+| `showClearIcon` | `boolean`                 | `false`               | Show a clear (X) icon that resets the input when clicked. Hidden until hover or until the input has a value |
 | `optionGroup`  | `boolean`                  | `false`               | Grouped suggestions — pass `GroupItem[]` via `resolve`   |
 | `disabled`     | `boolean`                  | `false`               | Disabled                                                 |
 | `required`     | `boolean`                  | `false`               | Required field                                           |
@@ -1593,13 +1721,21 @@ Text field with dynamic suggestions (typeahead).
 
 | Event              | Payload                                                                              | Description                                       |
 | ------------------ | ------------------------------------------------------------------------------------ | ------------------------------------------------- |
-| `completeMethod`   | `{ query: string; resolve: (results: { label: string; value: string }[]) => void }` | User typed (debounced by `debounceTime`) — **must call `e.detail.resolve(results)`** to populate dropdown |
+| `completeMethod`   | `{ query: string; resolve: (results: { label: string; value: string }[]) => void }` | User typed (debounced by `debounceTime`) — **must call `e.detail.resolve(results)`** to populate dropdown. Fires immediately (not debounced) with `query: ''` when the input is cleared — see note below |
 | `selected`         | `{ label: string; value: string }`                                                   | Item selected from the dropdown                   |
 | `validationChange` | `ValidationDetail`                                                                   | Validation state changed                          |
 
 > **`completeMethod` usa un callback Promise-based.** El componente espera `e.detail.resolve(results)` para mostrar las sugerencias. Llamar `setSuggestions()` o cualquier setState externo **no tiene efecto** — el prop `suggestions` no está conectado a la lista del dropdown.
 
+> ⚠️ **`value` does not populate the input on initial render.** The text shown in the field lives in internal state that is only synced from `value` by the `@Watch('value')` handler — and Stencil watchers don't fire during initial load (`componentWillLoad` never copies it). So `<ms-autocomplete value="Ada Lovelace">` mounts **empty** (with an unfloated label); only a *later* change to `value` fills it. The watcher also requires `typeof value === 'string'`, so a numeric `value` never fills the input despite the declared `string | number | null` type. To show a pre-selected value on mount, set `value` after mount (e.g. in an effect) or pass it as a string that changes at least once.
+
 > **Race-condition guard:** if the user types again (or clears the input) before a slower `completeMethod` call resolves, the stale response is automatically discarded instead of overwriting the newer one — safe to fire real network requests directly from `completeMethod` without your own request-sequencing logic. While waiting for `resolve()`, the dropdown shows a `Loading...` row.
+
+> **Clearing the input fires `completeMethod` with an empty `query` — in 2 of the 3 clearing paths.** When the user deletes the text by keyboard, or clicks the clear (X) icon (`showClearIcon`), the component emits `completeMethod` synchronously with `{ query: '', resolve: () => {} }` — `resolve` doesn't need to be called since there's nothing to search for. **Check `if (!e.detail.query)` in your `completeMethod` handler and reset whatever selection state you're holding there** (e.g. the object you set in `selected`) — otherwise, since `selected` only fires when the user picks a suggestion, clearing the input leaves your own state "stuck" on the last selection even though the field now looks empty.
+>
+> ⚠️ **The third path is silent:** clicking anywhere *outside* the component while the dropdown is open also wipes the visible input text (`handleOutsideClick` resets `inputValue`/`hasValue`), but emits **no** event at all and never touches the `value` prop. So a consumer that only listens on `completeMethod` can still end up with stale selection state after the user types and then clicks away. If that matters, also reconcile your state on blur or when the dropdown closes.
+
+> **Long input text truncates with an ellipsis** — the typed/selected text is single-line and cuts off with `…` when it doesn't fit the input's width. Always on, not configurable.
 
 **Item shape:**
 
@@ -1652,6 +1788,24 @@ const [suggestions, setSuggestions] = useState([]);
   }}
   onSelected={(e) => console.log(e.detail)}
 />
+
+// React — showClearIcon + resetting selection state on clear (see note above)
+const [userId, setUserId] = useState(null);
+
+<MsAutocomplete
+  label="Search user"
+  showIcon
+  showClearIcon
+  onCompleteMethod={async (e) => {
+    if (!e.detail.query) {
+      setUserId(null); // input was cleared — don't leave the old selection stuck
+      return;
+    }
+    const results = await api.searchUsers(e.detail.query);
+    e.detail.resolve(results.map(u => ({ label: u.name, value: u.id })));
+  }}
+  onSelected={(e) => setUserId(e.detail.value)}
+/>
 ```
 
 ---
@@ -1676,6 +1830,8 @@ Tag/chip input with optional autocomplete.
 > **`separator` value:** the comma mode uses the literal string `","` (not `"comma"`). Pass `separator=","`.
 
 **Events:** `changeEvent` — emits `string[]` with all current chips after any add/remove.
+
+> ⚠️ **In free-entry mode `changeEvent` also fires on every keystroke.** The emit sits outside the add/remove branches of the keydown handler, so typing any character (or pressing an arrow/Tab) re-emits the **unchanged** array. Don't wire expensive work (network calls, heavy recomputation) directly to `changeEvent` here — debounce it, or compare against the previous array before reacting. Autocomplete mode (`autocomplete=true`) is correctly scoped and only emits on actual add/remove.
 
 **Two operating modes (based on `suggestions` prop):**
 
@@ -2189,7 +2345,7 @@ interface StepItem {
 
 > **Clicking active or disabled step does nothing.** No event is emitted.
 
-**Accessibility and keyboard navigation:** the active step has `aria-current="step"`; disabled/readonly steps get `aria-disabled="true"`. When `readonly={false}`, step buttons form a roving-tabindex arrow-key group (only the clickable step is `tabIndex=0`): `ArrowRight`/`ArrowDown` moves to the next enabled step, `ArrowLeft`/`ArrowUp` to the previous, `Home`/`End` jump to the first/last enabled step, wrapping around. In the default `readonly={true}` mode nothing is interactive by mouse or keyboard.
+**Accessibility and keyboard navigation:** the active step has `aria-current="step"`; disabled/readonly steps get `aria-disabled="true"`. When `readonly={false}`, step buttons form a roving-tabindex arrow-key group (only the clickable step is `tabIndex=0`): `ArrowRight`/`ArrowDown` moves to the next enabled step, `ArrowLeft`/`ArrowUp` to the previous, `Home`/`End` jump to the first/last enabled step, wrapping around. **These keys use automatic activation** (same as `ms-tabs`): they don't just move focus — they select the step, so `stepChange`/`stepSelect` fire and the item's `command()` runs on every arrow press, not only on click. In the default `readonly={true}` mode nothing is interactive by mouse or keyboard.
 
 **Events:**
 
@@ -2410,7 +2566,7 @@ Floating toast notification. Controlled entirely via **props** — there is no `
 
 | Prop          | Type                                                                                                          | Default       | Description                                              |
 | ------------- | ------------------------------------------------------------------------------------------------------------- | ------------- | -------------------------------------------------------- |
-| `idComponent` | `string`                                                                                                      | `undefined`   | HTML `id` for the element                                |
+| `idComponent` | `string`                                                                                                      | `undefined`   | Declared but **not applied in the render** — has no effect. To target a specific notification, use `class` instead |
 | `visible`     | `boolean`                                                                                                     | `false`       | Show/hide the notification (`reflect: true`, `mutable: true`) |
 | `severity`    | `'info' \| 'success' \| 'warning' \| 'alert'`                                                                 | `'info'`      | Semantic type                                            |
 | `summary`     | `string \| null`                                                                                              | `null`        | Title / summary text                                     |
@@ -2533,10 +2689,12 @@ Main button component. Uses **shadow DOM** for full encapsulation.
 | `size`        | `'small' \| 'medium' \| 'large'`                                                                                                                  | `'medium'`  | Size                                                         |
 | `type`        | `'button' \| 'submit' \| 'reset'`                                                                                                                 | `'button'`  | HTML button type                                             |
 | `disabled`    | `boolean`                                                                                                                                         | `false`     | Disabled state                                               |
-| `loading`     | `boolean`                                                                                                                                         | `false`     | Shows `MsSpinner` (1.5rem) and disables the button           |
+| `loading`     | `boolean`                                                                                                                                         | `undefined` | Shows `MsSpinner` (`height="1.5rem"`; width stays the spinner's default `2rem`) and disables the button |
 | `icon`        | `string`                                                                                                                                          | —           | Image URL rendered as `<img>` inside the button              |
-| `class`       | `string`                                                                                                                                          | —           | Applied to the host element **and** injected into shadow DOM |
-| `customClass` | `string`                                                                                                                                          | —           | Injected into shadow DOM **only** — not duplicated on host   |
+| `class`       | `string`                                                                                                                                          | —           | Applied to the host element, and injected into shadow DOM **only if `customClass` is unset** |
+| `customClass` | `string`                                                                                                                                          | —           | Injected into shadow DOM **only** — not duplicated on host. **Takes precedence over `class`** |
+
+> ⚠️ **`class` and `customClass` are not additive — `customClass` wins.** The component resolves a single `customClass || class` internally and uses only that for both the inner button's class list and the style injection. If you set **both**, `class` lands on the host element but its rules are **not** injected into the shadow root, so it won't style the inner button. Use one or the other.
 
 **Events:** `clickEvent` — emits `MouseEvent`. Not fired when `disabled` or `loading`.
 
@@ -2613,13 +2771,15 @@ Date and time picker (datepicker).
 
 | Event              | Payload                        | Description                                                                              |
 | ------------------ | ------------------------------ | ---------------------------------------------------------------------------------------- |
-| `update`           | `string \| string[] \| null`   | Date value. Single: `'MM/DD/YYYY'` or `'MM/DD/YYYY HH:mm'`. Range: `['MM/DD/YYYY', 'MM/DD/YYYY']`. Reset: `null` |
+| `update`           | `string \| string[] \| null`   | Date value. Single: `'MM/DD/YYYY'` or `'MM/DD/YYYY HH:mm'`. Range: `['MM/DD/YYYY', 'MM/DD/YYYY']` — but see the half-range note below. Reset: `null` |
 | `validationChange` | `ValidationDetail`             | Fires on blur, select, and required/invalid changes                                      |
 
 **Important:**
 - `minDate` / `maxDate` are **JS-only props** — they cannot be set as HTML attributes. Always assign via JavaScript (React prop or `.minDate = new Date(...)`).
 - `value` format emitted/expected is `MM/DD/YYYY`, not ISO 8601. Parse accordingly.
 - Calendar auto-positions top/bottom based on available viewport space.
+- **`selectionMode='range'` emits a half-filled array mid-selection.** After the user picks the *start* date and before picking the end, `update` fires with `['MM/DD/YYYY', '']` — the second element is an **empty string**, not `undefined` or a second date. Guard with `if (!e.detail[1]) return;` before treating the payload as a complete range, otherwise you'll try to parse `''` as a date.
+- `value` is mutable — the component writes the selected date back into its own `value` prop on every selection.
 
 ```tsx
 // React — single date
@@ -2860,7 +3020,7 @@ Modal dialog with slots for header, body, and footer. `shadow: false`.
 | `styleComponent` | `style-component`  | `string`                                                                                          | —          | Inline CSS string applied to the dialog box (e.g. `"width:600px;"`) |
 | `zIndex`         | `z-index`          | `string`                                                                                          | `'9000'`   | Z-index of the backdrop                                              |
 | `class`          | `class`            | `string \| null`                                                                                  | `null`     | Extra CSS class on the dialog box                                    |
-| `idComponent`    | `id-component`     | `string`                                                                                          | —          | `id` attribute on the dialog element                                 |
+| `idComponent`    | `id-component`     | `string`                                                                                          | —          | Declared but **not applied in the render** — has no effect. Use `customClass` to target a specific dialog |
 
 **Events:**
 
@@ -2900,7 +3060,7 @@ Modal dialog with slots for header, body, and footer. `shadow: false`.
   <div slot="footer">
     <MsButton
       label="Cancel"
-      variant="outlined"
+      variant="outline-primary"
       onClickEvent={() => setVisible(false)}
     />
     <MsButton label="Delete" variant="danger" onClickEvent={handleDelete} />
@@ -2948,6 +3108,19 @@ Advanced data table with sorting, pagination, selection and expandable rows. `sh
 
 > **No table-level `sortable` prop.** Sorting is per-column via `column.sortable`. The table sorts client-side by default; emit `sort` and handle externally for server-side sort.
 
+> ⚠️ **`sort` fires TWICE on every sortable-header click, and the second one is malformed.** The header's `onClick` calls `handleSort()` — which emits `{ orderBy, sortBy: <internal state> }` with the correct `'asc'`/`'desc'` — and then *immediately emits `sort` a second time itself*, this time reading the **`sortOrder` prop** instead of the internal state. Since `sortOrder` defaults to `''` and is only meaningful if you control it, the second event usually arrives as `{ orderBy: 'name', sortBy: '' }`.
+>
+> **This matters for server-side sorting:** a naive `onSort={(e) => fetchSorted(e.detail.orderBy, e.detail.sortBy)}` fires two requests per click, and the *last* one — the one whose response wins the race — carries an empty direction. Guard against it until this is fixed upstream:
+> ```tsx
+> <MsTable
+>   onSort={(e) => {
+>     if (!e.detail.sortBy) return;          // ignore the malformed second emit
+>     fetchSorted(e.detail.orderBy, e.detail.sortBy);
+>   }}
+> />
+> ```
+> Keeping `sortField`/`sortOrder` as controlled props (updating them from the first event) also makes the second emit carry the right value.
+
 **`ColumnDef` interface:**
 
 ```typescript
@@ -2973,6 +3146,8 @@ interface ColumnDef {
 > { field: 'stock',  header: 'Stock',  align: 'right', alignHeader: 'right' }
 > ```
 
+> **Empty state (`data.length === 0`):** renders a centered "no records found" illustration instead of data rows. The icon has extra spacing above/below (`.ms-table-not-found-icon`, `margin: 4rem 0`) so it doesn't sit flush against the column headers — purely visual, not configurable via props.
+
 **Events:**
 
 | Event             | Payload                                                    | Description                                      |
@@ -2980,7 +3155,7 @@ interface ColumnDef {
 | `rowClick`        | `{ row: any, index: number }`                              | Row clicked (not fired when `expandableRow=true`) |
 | `selection`       | `any[]`                                                    | Array of selected row objects after change       |
 | `paginatorChange` | `{ currentPage: number }` or full paginator payload        | Page changed                                     |
-| `sort`            | `{ orderBy: string, sortBy: 'asc' \| 'desc' }`             | Sort applied — **`orderBy`/`sortBy`**, not `field`/`order` |
+| `sort`            | `{ orderBy: string, sortBy: 'asc' \| 'desc' }`             | Sort applied — **`orderBy`/`sortBy`**, not `field`/`order`. ⚠️ Fires **twice** per header click — see note below |
 | `expand`          | `number \| null`                                           | Expanded row ID (dataKey value), or `null` when collapsed |
 | `reorder`         | `any[]`                                                    | Full data array in new order after drag          |
 | `columnsReorder`  | `ColumnDef[]`                                              | Full columns array in new order after drag       |
@@ -4129,7 +4304,7 @@ function UsersTable({ users }: { users: User[] }) {
         <div slot="footer">
           <MsButton
             label="Cancel"
-            variant="outlined"
+            variant="outline-primary"
             onClickEvent={() => setDeleteTarget(null)}
           />
           <MsButton
@@ -4243,17 +4418,17 @@ Each component has its own `.stories.tsx` file with variants, props and behavior
 
 | Package                   | Use in          | Version |
 | ------------------------- | --------------- | ------- |
-| `maxi-web-components`     | Vanilla JS only | 9.0.0   |
-| `maxi-react-components`   | React 17/18/19  | 9.0.0   |
-| `maxi-angular-components` | Angular 18+     | 9.0.0   |
+| `maxi-web-components`     | Vanilla JS only | 10.0.4  |
+| `maxi-react-components`   | React 17/18/19  | 10.0.4  |
+| `maxi-angular-components` | Angular 18+     | 10.0.4  |
 
 **Nexus registry:** `https://artifacts.maxilabs.net/repository/npm-group/`
 
-**Total components:** 50 web components with auto-generated wrappers for React and Angular.
+**Total components:** 52 web components with auto-generated wrappers for React and Angular.
 
 **Categories:**
 
-- Forms (10): `ms-input-field`, `ms-input-password`, `ms-input-number`, `ms-input-otp`, `ms-input-switch`, `ms-checkbox`, `ms-radio`, `ms-control-number`, `ms-knob`, `ms-input-group`
+- Forms (12): `ms-input-field`, `ms-input-password`, `ms-input-number`, `ms-input-otp`, `ms-input-switch`, `ms-checkbox`, `ms-radio`, `ms-control-number`, `ms-knob`, `ms-input-group`, `ms-textarea`, `ms-slider`
 - Selection (5): `ms-dropdown`, `ms-multiselect`, `ms-autocomplete`, `ms-chips`, `ms-select-button`
 - Navigation (6): `ms-accordion`, `ms-tabs`, `ms-breadcrumb`, `ms-navbar`, `ms-sidebar`, `ms-steps`
 - Display (8): `ms-badge`, `ms-icon`, `ms-image`, `ms-message`, `ms-notification`, `ms-skeleton`, `ms-spinner`, `ms-gauge-chart`
